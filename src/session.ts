@@ -1,0 +1,448 @@
+/**
+ * Session persistence as one JSONL file per session under .reagent/sessions/,
+ * in the style of Codex and Claude Code (which store one append-style JSONL
+ * transcript per session). Chosen over SQLite so sessions are human-readable,
+ * git-diffable, and free of any native or experimental dependency.
+ *
+ * File layout of <id>.jsonl:
+ *   line 1  envelope: { v, id, title, created_at, updated_at, message_count, todos, usage }
+ *   line 2+ one raw chat message per line (the OpenAI message shape)
+ *
+ * Each save rewrites the file atomically (tmp + rename), so a crash never leaves
+ * a half-written session. Legacy pre-SQLite files (<id>.json, a single JSON
+ * object) are converted in place to <id>.jsonl on first use. A prior SQLite
+ * database is migrated by scripts/migrate-sessions.mjs, not by this module.
+ */
+
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { performance } from "node:perf_hooks";
+
+import { config } from "./config.js";
+import type { ChatMessage, TodoItem, Usage } from "./types.js";
+
+const ENVELOPE_VERSION = 1;
+
+/** Typed equivalent of the load's FileNotFoundError; the server maps it to 404. */
+export class SessionNotFoundError extends Error {}
+
+/** epoch in float SECONDS with high resolution, like Python's time.time(). */
+function now(): number {
+  return (performance.timeOrigin + performance.now()) / 1000;
+}
+
+function sessionsDir(): string {
+  return path.join(config.stateDir, "sessions");
+}
+
+function filePath(id: string): string {
+  return path.join(sessionsDir(), `${id}.jsonl`);
+}
+
+/** Reads only the first line of a file without loading the whole thing. */
+function readFirstLine(file: string): string {
+  const fd = fs.openSync(file, "r");
+  try {
+    const chunk = Buffer.alloc(65536);
+    let acc = "";
+    for (;;) {
+      const read = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (read === 0) return acc; // EOF, no newline: the whole file is one line
+      acc += chunk.toString("utf8", 0, read);
+      const nl = acc.indexOf("\n");
+      if (nl >= 0) return acc.slice(0, nl);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Atomic write: tmp + rename, so readers never see a half-written file. */
+function atomicWrite(file: string, content: string): void {
+  const tmp = `${file}.${randomBytes(4).toString("hex")}.tmp`;
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, file);
+}
+
+interface Envelope {
+  v: number;
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+  todos: TodoItem[];
+  usage: Usage;
+}
+
+function parseEnvelope(line: string): Envelope | null {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof obj !== "object" || obj === null) return null;
+  const e = obj as Record<string, unknown>;
+  if (typeof e.id !== "string") return null;
+  return {
+    v: typeof e.v === "number" ? e.v : ENVELOPE_VERSION,
+    id: e.id,
+    title: typeof e.title === "string" ? e.title : "",
+    created_at: Number(e.created_at ?? 0),
+    updated_at: Number(e.updated_at ?? 0),
+    message_count: Number(e.message_count ?? 0),
+    todos: Array.isArray(e.todos) ? (e.todos as TodoItem[]) : [],
+    usage: e.usage && typeof e.usage === "object" ? (e.usage as Usage) : ({} as Usage),
+  };
+}
+
+/**
+ * Converts a legacy pre-SQLite session file (<id>.json, a single JSON object)
+ * into the new <id>.jsonl envelope+messages format, in place. Returns the id, or
+ * null if the file could not be parsed.
+ */
+function convertLegacyJson(jsonFile: string): string | null {
+  let data: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(jsonFile, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    data = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const base = path.basename(jsonFile, ".json");
+  const id = data.id !== undefined ? String(data.id) : base;
+  const messages = Array.isArray(data.messages) ? (data.messages as ChatMessage[]) : [];
+  const s = new Session({
+    id,
+    title: data.title !== undefined ? String(data.title) : "",
+    messages,
+    todos: Array.isArray(data.todos) ? (data.todos as TodoItem[]) : [],
+    usage: data.usage && typeof data.usage === "object" ? (data.usage as Usage) : undefined,
+    createdAt: Number(data.created_at ?? 0) || undefined,
+    updatedAt: Number(data.updated_at ?? 0) || undefined,
+  });
+  // preserve the original updated_at (save() would bump it to now)
+  writeSession(s, s.updatedAt);
+  return id;
+}
+
+// Directories already prepared IN THIS process (created + legacy converted).
+// Doing the legacy scan once per process per path is enough.
+const initialized = new Set<string>();
+
+function ensureInit(): string {
+  const dir = sessionsDir();
+  fs.mkdirSync(dir, { recursive: true });
+  if (initialized.has(dir)) return dir;
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"));
+  } catch {
+    names = [];
+  }
+  for (const name of names) {
+    const jsonFile = path.join(dir, name);
+    const id = convertLegacyJson(jsonFile);
+    // remove the legacy file only after the .jsonl was written successfully
+    if (id !== null && fs.existsSync(filePath(id))) {
+      try {
+        fs.rmSync(jsonFile, { force: true });
+      } catch {
+        // leave the legacy file; the next scan retries
+      }
+    }
+  }
+  initialized.add(dir);
+  return dir;
+}
+
+/** Serializes a session to disk with an explicit updated_at, atomically. */
+function writeSession(s: Session, updatedAt: number): void {
+  fs.mkdirSync(sessionsDir(), { recursive: true });
+  // preserve the original created_at across saves (never bumped on rewrite)
+  let createdAt = s.createdAt;
+  try {
+    const env = parseEnvelope(readFirstLine(filePath(s.id)));
+    if (env && env.created_at) createdAt = env.created_at;
+  } catch {
+    // no existing file: use the session's own created_at
+  }
+  const envelope: Envelope = {
+    v: ENVELOPE_VERSION,
+    id: s.id,
+    title: s.title,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    message_count: s.messages.length,
+    todos: s.todos,
+    usage: s.usage,
+  };
+  s.createdAt = createdAt;
+  const lines = [JSON.stringify(envelope), ...s.messages.map((m) => JSON.stringify(m))];
+  atomicWrite(filePath(s.id), lines.join("\n") + "\n");
+}
+
+export interface SessionFields {
+  id: string;
+  title?: string;
+  messages?: ChatMessage[];
+  todos?: TodoItem[];
+  usage?: Usage;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export class Session {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  todos: TodoItem[];
+  usage: Usage;
+  createdAt: number;
+  updatedAt: number;
+  /**
+   * Runtime-only queue of background-agent completion notifications (task-notification
+   * messages) awaiting injection into history. Not persisted in the envelope.
+   */
+  pendingBgNotifications: string[] = [];
+
+  constructor(fields: SessionFields) {
+    this.id = fields.id;
+    this.title = fields.title ?? "";
+    this.messages = fields.messages ?? [];
+    this.todos = fields.todos ?? [];
+    // Python truthiness: empty usage ({}) falls to the default
+    this.usage =
+      fields.usage && Object.keys(fields.usage).length > 0
+        ? fields.usage
+        : { prompt_tokens: 0, completion_tokens: 0, last_prompt_tokens: 0 };
+    // Python truthiness: created_at 0/null falls to now
+    this.createdAt = fields.createdAt ? fields.createdAt : now();
+    this.updatedAt = fields.updatedAt ? fields.updatedAt : this.createdAt;
+  }
+
+  /** readable and sortable id: YYYYMMDD-HHMMSS-4hex (local time, like strftime). */
+  static new(): Session {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp =
+      `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+      `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return new Session({ id: `${stamp}-${randomBytes(2).toString("hex")}` });
+  }
+
+  save(): void {
+    ensureInit();
+    this.updatedAt = now();
+    writeSession(this, this.updatedAt);
+  }
+
+  static load(sid: string): Session {
+    ensureInit();
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath(sid), "utf8");
+    } catch {
+      throw new SessionNotFoundError(`session not found: ${sid}`);
+    }
+    const lines = raw.split("\n").filter((l) => l.length > 0);
+    const env = lines.length > 0 ? parseEnvelope(lines[0]!) : null;
+    if (env === null) {
+      throw new SessionNotFoundError(`session not found: ${sid}`);
+    }
+    const messages: ChatMessage[] = [];
+    for (const line of lines.slice(1)) {
+      try {
+        messages.push(JSON.parse(line) as ChatMessage);
+      } catch {
+        // skip a corrupted trailing line rather than losing the whole session
+      }
+    }
+    return new Session({
+      id: env.id,
+      title: env.title,
+      messages,
+      todos: env.todos,
+      usage: env.usage,
+      createdAt: env.created_at || undefined,
+      updatedAt: env.updated_at || undefined,
+    });
+  }
+
+  /**
+   * Duplicates a session: new id, same history/todos/usage, title "(fork)".
+   * `codex fork` style: explore an alternative path without touching the original
+   * conversation. Throws SessionNotFoundError if the session does not exist.
+   */
+  static fork(sid: string): Session {
+    const source = Session.load(sid);
+    const forked = Session.new();
+    forked.title = (source.title + " (fork)").trim();
+    // deep copy: mutations on the fork must not leak into the original
+    forked.messages = structuredClone(source.messages);
+    forked.todos = structuredClone(source.todos);
+    forked.usage = structuredClone(source.usage);
+    forked.save();
+    return forked;
+  }
+
+  /** Reads every session's envelope (cheap: only the first line of each file). */
+  private static envelopes(): Envelope[] {
+    const dir = ensureInit();
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      return [];
+    }
+    const out: Envelope[] = [];
+    for (const name of names) {
+      try {
+        const env = parseEnvelope(readFirstLine(path.join(dir, name)));
+        if (env) out.push(env);
+      } catch {
+        // unreadable file: skip
+      }
+    }
+    return out;
+  }
+
+  /** Metadata of all sessions, most recent first. */
+  static list(): { id: string; title: string; messages: number; updated_at: number }[] {
+    return Session.envelopes()
+      .sort((a, b) => b.updated_at - a.updated_at)
+      .map((e) => ({
+        id: e.id,
+        title: e.title,
+        messages: e.message_count,
+        updated_at: e.updated_at,
+      }));
+  }
+
+  /**
+   * Full-text search over titles and message content by scanning the session
+   * files (no FTS index; the single-user volume makes a scan effectively free,
+   * the same approach Codex and Claude Code take). Case-insensitive substring.
+   */
+  static search(
+    query: string,
+    limit = 20,
+  ): { id: string; title: string; messages: number; updated_at: number; snippet: string }[] {
+    const dir = ensureInit();
+    // strip NUL to stay robust against binary noise in the query
+    const needle = query.replaceAll("\u0000", "").toLowerCase();
+    if (!needle) return [];
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      return [];
+    }
+    const hits: {
+      id: string;
+      title: string;
+      messages: number;
+      updated_at: number;
+      snippet: string;
+    }[] = [];
+    for (const name of names) {
+      let raw: string;
+      try {
+        raw = fs.readFileSync(path.join(dir, name), "utf8");
+      } catch {
+        continue;
+      }
+      const lines = raw.split("\n").filter((l) => l.length > 0);
+      const env = lines.length > 0 ? parseEnvelope(lines[0]!) : null;
+      if (env === null) continue;
+      const snippet = searchSnippet(env, lines.slice(1), needle);
+      if (snippet !== null) {
+        hits.push({
+          id: env.id,
+          title: env.title,
+          messages: env.message_count,
+          updated_at: env.updated_at,
+          snippet,
+        });
+      }
+    }
+    return hits.sort((a, b) => b.updated_at - a.updated_at).slice(0, limit);
+  }
+
+  static delete(sid: string): boolean {
+    ensureInit();
+    try {
+      fs.rmSync(filePath(sid));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  static deleteAll(): number {
+    const dir = ensureInit();
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      return 0;
+    }
+    let n = 0;
+    for (const name of names) {
+      try {
+        fs.rmSync(path.join(dir, name));
+        n += 1;
+      } catch {
+        // already gone: ignore
+      }
+    }
+    return n;
+  }
+
+  static latestId(): string | null {
+    const sessions = Session.list();
+    return sessions.length > 0 ? (sessions[0] as { id: string }).id : null;
+  }
+}
+
+/**
+ * Builds a snippet for a search hit, or null if the query is not found in the
+ * title nor in any user/assistant message. The matched term is wrapped in
+ * [brackets] with an ellipsis window, mirroring the old FTS snippet shape.
+ */
+function searchSnippet(env: Envelope, messageLines: string[], needle: string): string | null {
+  if (env.title.toLowerCase().includes(needle)) {
+    return window(env.title, needle);
+  }
+  for (const line of messageLines) {
+    let m: ChatMessage;
+    try {
+      m = JSON.parse(line) as ChatMessage;
+    } catch {
+      continue;
+    }
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    const content = typeof m.content === "string" ? m.content : "";
+    if (content.toLowerCase().includes(needle)) {
+      return window(content, needle);
+    }
+  }
+  return null;
+}
+
+/** A short excerpt around the first match, term wrapped in [brackets]. */
+function window(text: string, needle: string): string {
+  const clean = text.replaceAll("\u0000", "");
+  const at = clean.toLowerCase().indexOf(needle);
+  if (at < 0) return clean.slice(0, 64);
+  const pad = 24;
+  const start = Math.max(0, at - pad);
+  const end = Math.min(clean.length, at + needle.length + pad);
+  const before = (start > 0 ? "…" : "") + clean.slice(start, at);
+  const match = clean.slice(at, at + needle.length);
+  const after = clean.slice(at + needle.length, end) + (end < clean.length ? "…" : "");
+  return `${before}[${match}]${after}`;
+}

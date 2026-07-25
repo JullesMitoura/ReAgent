@@ -1,0 +1,50 @@
+{
+  "name": "reagent",
+  "version": "0.2.0",
+  "description": "ReAgent: terminal and web code agent. Private by design: the only network egress is your own LLM endpoint.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "reagent": "bin/reagent.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "static",
+    "scripts/postinstall.mjs"
+  ],
+  "workspaces": [
+    "ui"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/main.ts",
+    "dev:server": "tsx src/cli/main.ts serve",
+    "build": "tsc -p tsconfig.build.json",
+    "build:web": "npm run build --workspace ui && rm -rf static && cp -R ui/dist static",
+    "prepublishOnly": "npm run build:web && npm run build",
+    "postinstall": "node scripts/postinstall.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.11",
+    "hono": "^4.12.31",
+    "openai": "^6.49.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

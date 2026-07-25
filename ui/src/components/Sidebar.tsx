@@ -1,0 +1,273 @@
+import { useEffect, useRef, useState } from "react";
+import { prettyPath } from "../paths";
+import type { SessionMeta } from "../types";
+import { Orb } from "./Orb";
+
+interface Props {
+  mode: "detecting" | "live" | "demo";
+  /** Diretório que o agente pode ler/editar; mostrado no rodapé. */
+  root?: string;
+  sessions: SessionMeta[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
+  onClearAll: () => void;
+}
+
+/** Rótulo do atalho de nova conversa, conforme a plataforma (⌘K no macOS). */
+export const NEW_CHAT_SHORTCUT = /Mac|iP(hone|ad|od)/.test(
+  typeof navigator === "undefined" ? "" : navigator.platform,
+)
+  ? "⌘K"
+  : "Ctrl K";
+
+const DAY = 86_400_000;
+const BUCKETS = ["Today", "Yesterday", "Previous 7 days", "Earlier"] as const;
+type Bucket = (typeof BUCKETS)[number];
+
+/** Date bucket for a session, from its last-update epoch ms. */
+function bucketOf(ms?: number): Bucket {
+  if (!ms) return "Earlier";
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ms >= startToday) return "Today";
+  if (ms >= startToday - DAY) return "Yesterday";
+  if (ms >= startToday - 7 * DAY) return "Previous 7 days";
+  return "Earlier";
+}
+
+/** Compact relative time ("just now", "5m ago", "3h ago", "2d ago"). */
+function relativeTime(ms?: number): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return "just now";
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return `${Math.floor(d / 7)}w ago`;
+}
+
+function SessionItem({
+  session,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  session: SessionMeta;
+  active: boolean;
+  onSelect: (id: string) => void;
+  onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const startEditing = () => {
+    setDraft(session.title || "");
+    setEditing(true);
+  };
+
+  const commit = () => {
+    setEditing(false);
+    const title = draft.trim();
+    if (title && title !== session.title) onRename(session.id, title);
+  };
+
+  if (editing) {
+    return (
+      <div className="relative flex items-center rounded-lg bg-white/5">
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          aria-label={`rename session ${session.id}`}
+          className="w-full bg-transparent px-3 py-2 text-[13px] text-zinc-100 caret-cyan-300 outline-none ring-1 ring-inset ring-cyan-400/40 rounded-lg"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`group/item relative flex items-center rounded-lg transition-colors ${
+        active ? "bg-cyan-500/10 text-zinc-100" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+      }`}
+    >
+      {active && (
+        <span className="pointer-events-none absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-cyan-400" />
+      )}
+      <button
+        onClick={() => onSelect(session.id)}
+        onDoubleClick={startEditing}
+        className="min-w-0 flex-1 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-cyan-400/40"
+      >
+        <div className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-[13px]">{session.title || "(untitled)"}</span>
+          {relativeTime(session.updatedAtMs) && (
+            <span className="shrink-0 text-[10px] text-zinc-600 group-hover/item:hidden">
+              {relativeTime(session.updatedAtMs)}
+            </span>
+          )}
+        </div>
+        {session.snippet && <div className="mt-0.5 truncate text-[11px] text-zinc-500">{session.snippet}</div>}
+      </button>
+      <button
+        onClick={startEditing}
+        aria-label={`rename session ${session.id}`}
+        title="Rename"
+        className="grid h-7 w-6 shrink-0 place-items-center rounded text-zinc-600 opacity-0 transition-colors hover:text-cyan-300 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/40 group-hover/item:opacity-100"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="h-3 w-3"
+        >
+          <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+        </svg>
+      </button>
+      <button
+        onClick={() => onDelete(session.id)}
+        aria-label={`delete session ${session.id}`}
+        title="Delete"
+        className="mr-1 grid h-7 w-6 shrink-0 place-items-center rounded text-zinc-600 opacity-0 transition-colors hover:text-red-400 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/40 group-hover/item:opacity-100"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+          className="h-3 w-3"
+        >
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+export function Sidebar({ mode, root = "", sessions, activeId, onSelect, onNew, onRename, onDelete, onClearAll }: Props) {
+  // Preserve the backend order (most-recent first) inside each date bucket.
+  const groups = BUCKETS.map((label) => ({
+    label,
+    items: sessions.filter((s) => bucketOf(s.updatedAtMs) === label),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <aside className="flex w-56 shrink-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/45">
+      <div className="flex items-center gap-2.5 px-4 py-4">
+        <Orb className="h-5 w-5" />
+        <div className="text-sm font-semibold tracking-wide text-zinc-100">ReAgent</div>
+      </div>
+
+      {mode === "demo" && (
+        <div className="mx-3 mb-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2 text-[11px] leading-relaxed text-amber-100/80">
+          Demo mode: no changes will be made on your computer.
+        </div>
+      )}
+
+      <button
+        onClick={onNew}
+        title={`New conversation (${NEW_CHAT_SHORTCUT})`}
+        className="group mx-3 mb-4 flex items-center gap-2 whitespace-nowrap rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-cyan-400/30 hover:bg-white/[0.04] hover:text-zinc-100 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0 text-cyan-400/80 transition-transform duration-200 group-hover:rotate-90"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        New conversation
+        <kbd className="ml-auto font-sans text-[10px] leading-none text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100">
+          {NEW_CHAT_SHORTCUT}
+        </kbd>
+      </button>
+
+      <div className="flex items-center justify-between px-4 pb-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+          Sessions
+          {sessions.length > 0 && (
+            <span className="ml-1.5 font-normal tracking-normal text-zinc-600">{sessions.length}</span>
+          )}
+        </span>
+        {sessions.length > 0 && (
+          <button
+            onClick={onClearAll}
+            title="Delete all history"
+            className="rounded text-[10px] text-zinc-600 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/40"
+          >
+            clear all
+          </button>
+        )}
+      </div>
+
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-3">
+        {sessions.length === 0 && (
+          <div className="animate-fade px-2 pt-8 text-center">
+            <div className="font-mono text-[11px] text-zinc-600">no conversations yet</div>
+            <div className="mt-1 text-[10px] text-zinc-700">start a new one above</div>
+          </div>
+        )}
+        {groups.map((group) => (
+          <div key={group.label} className="space-y-0.5">
+            <div className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.15em] text-zinc-600">
+              {group.label}
+            </div>
+            {group.items.map((s) => (
+              <SessionItem
+                key={s.id}
+                session={s}
+                active={s.id === activeId}
+                onSelect={onSelect}
+                onRename={onRename}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      {root && (
+        <div className="flex items-center justify-between gap-2 border-t border-white/5 px-4 py-2.5 text-[11px]">
+          <div className="flex min-w-0 items-center gap-1.5 text-zinc-500" title={root}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+            </svg>
+            <span className="truncate font-mono">{prettyPath(root)}</span>
+          </div>
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${mode === "live" ? "bg-emerald-400" : "bg-amber-400"}`}
+            title={mode === "live" ? "live" : "demo"}
+          />
+        </div>
+      )}
+    </aside>
+  );
+}

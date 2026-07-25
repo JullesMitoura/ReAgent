@@ -1,0 +1,540 @@
+@import "tailwindcss";
+
+@theme {
+  --animate-fade-up: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-pop-in: pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade: fade 0.2s ease both;
+}
+
+/* rotulo de acao "vivo": gradiente ciano/violeta varrendo o texto enquanto a ferramenta roda */
+.shimmer {
+  background: linear-gradient(90deg, #a5b4fc, #67e8f9, #c4b5fd, #67e8f9, #a5b4fc);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bounce-dot {
+  0%,
+  60%,
+  100% {
+    transform: none;
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Orb status: three dots that pulse in sequence */
+.status-ellipsis {
+  display: inline-flex;
+  width: 1.15em;
+  margin-left: 1px;
+}
+.status-ellipsis > span {
+  display: inline-block;
+  animation: status-dot 1.2s ease-in-out infinite;
+  opacity: 0.2;
+}
+.status-ellipsis > span:nth-child(1) {
+  animation-delay: 0ms;
+}
+.status-ellipsis > span:nth-child(2) {
+  animation-delay: 200ms;
+}
+.status-ellipsis > span:nth-child(3) {
+  animation-delay: 400ms;
+}
+@keyframes status-dot {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+body {
+  background:
+    radial-gradient(1100px 550px at 12% -8%, rgba(34, 211, 238, 0.09), transparent 60%),
+    radial-gradient(900px 550px at 108% 112%, rgba(167, 139, 250, 0.08), transparent 60%),
+    radial-gradient(1400px 700px at 50% 115%, rgba(99, 102, 241, 0.05), transparent 65%),
+    #09090b;
+  background-attachment: fixed;
+  color: #e4e4e7;
+}
+
+/* selecao de texto com o acento ciano da UI */
+::selection {
+  background: rgba(34, 211, 238, 0.28);
+  color: #f0fdff;
+}
+
+/* Painel de vidro fosco usado em toda a UI: highlight interno no topo e sombra ambiente */
+.glass {
+  background: rgba(24, 24, 27, 0.55);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
+.typing-dot {
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+
+/* Variáveis de cor do orb registradas como <color>: só assim o navegador consegue
+   INTERPOLAR a cor (gradientes e custom properties normais trocam de golpe, o que
+   parecia "trocar uma imagem por outra"). Com isto, mudar de estado vira uma
+   transição suave de cor. Degrada bem: navegador sem @property só troca na hora. */
+@property --orb-spot-warm { syntax: "<color>"; inherits: true; initial-value: #fdba74; }
+@property --orb-spot-main { syntax: "<color>"; inherits: true; initial-value: #8b5cf6; }
+@property --orb-spot-light { syntax: "<color>"; inherits: true; initial-value: #e9d5ff; }
+@property --orb-spot-accent { syntax: "<color>"; inherits: true; initial-value: #f9a8d4; }
+@property --orb-base-a { syntax: "<color>"; inherits: true; initial-value: #c4b5fd; }
+@property --orb-base-b { syntax: "<color>"; inherits: true; initial-value: #a78bfa; }
+@property --orb-core-mid { syntax: "<color>"; inherits: true; initial-value: #fdba74; }
+@property --orb-core-edge { syntax: "<color>"; inherits: true; initial-value: #a855f7; }
+@property --orb-glow { syntax: "<color>"; inherits: true; initial-value: rgba(167, 139, 250, 0.45); }
+@property --orb-shade { syntax: "<color>"; inherits: true; initial-value: rgba(76, 29, 149, 0.28); }
+
+/* Esfera dentro de esfera: um núcleo interno orbita dentro da membrana externa
+   e a deforma ao passar. Cores suaves (pêssego/violeta/lavanda) sob luz fixa.
+   A deformação (orb-morph) tem a MESMA duração e fase da órbita do núcleo,
+   então a protuberância acompanha a posição dele. */
+.orb {
+  /* paleta da esfera: troque estas variáveis para mudar o tema */
+  --orb-spot-warm: #fdba74;
+  --orb-spot-main: #8b5cf6;
+  --orb-spot-light: #e9d5ff;
+  --orb-spot-accent: #f9a8d4;
+  --orb-base-a: #c4b5fd;
+  --orb-base-b: #a78bfa;
+  --orb-core-mid: #fdba74;
+  --orb-core-edge: #a855f7;
+  --orb-glow: rgba(167, 139, 250, 0.45);
+  --orb-shade: rgba(76, 29, 149, 0.28);
+
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  /* transição das cores registradas (@property): trocar de estado vira uma mudança
+     de cor suave, não uma troca seca de imagem. ~0.8s cobre azul->verde->normal. */
+  transition:
+    --orb-spot-warm 0.8s ease, --orb-spot-main 0.8s ease, --orb-spot-light 0.8s ease,
+    --orb-spot-accent 0.8s ease, --orb-base-a 0.8s ease, --orb-base-b 0.8s ease,
+    --orb-core-mid 0.8s ease, --orb-core-edge 0.8s ease, --orb-glow 0.8s ease,
+    --orb-shade 0.8s ease, filter 0.5s ease;
+  border-radius: 48% 60% 58% 46% / 52% 48% 54% 46%;
+  box-shadow: 0 0 22px var(--orb-glow);
+  animation: orb-morph 6s linear infinite;
+}
+
+/* Estados do agente: o orb troca de paleta (dupla classe garante precedência).
+   coding=azul (trabalhando), done=verde (concluiu), error=vermelho (tendo problemas). */
+.orb.orb-coding {
+  --orb-spot-warm: #67e8f9;
+  --orb-spot-main: #0ea5e9;
+  --orb-spot-light: #bae6fd;
+  --orb-spot-accent: #818cf8;
+  --orb-base-a: #7dd3fc;
+  --orb-base-b: #38bdf8;
+  --orb-core-mid: #38bdf8;
+  --orb-core-edge: #2563eb;
+  --orb-glow: rgba(56, 189, 248, 0.5);
+  --orb-shade: rgba(30, 64, 175, 0.3);
+}
+.orb.orb-done {
+  --orb-spot-warm: #86efac;
+  --orb-spot-main: #10b981;
+  --orb-spot-light: #d1fae5;
+  --orb-spot-accent: #34d399;
+  --orb-base-a: #6ee7b7;
+  --orb-base-b: #34d399;
+  --orb-core-mid: #34d399;
+  --orb-core-edge: #059669;
+  --orb-glow: rgba(52, 211, 153, 0.5);
+  --orb-shade: rgba(6, 95, 70, 0.3);
+}
+.orb.orb-error {
+  --orb-spot-warm: #fdba74;
+  --orb-spot-main: #f97316;
+  --orb-spot-light: #fed7aa;
+  --orb-spot-accent: #f87171;
+  --orb-base-a: #fca5a5;
+  --orb-base-b: #f87171;
+  --orb-core-mid: #fb923c;
+  --orb-core-edge: #dc2626;
+  --orb-glow: rgba(248, 113, 113, 0.5);
+  --orb-shade: rgba(153, 27, 27, 0.3);
+}
+
+/* base de cor difusa, girando bem devagar */
+.orb::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  border-radius: 50%;
+  background:
+    radial-gradient(42% 42% at 68% 30%, var(--orb-spot-warm) 0%, transparent 70%),
+    radial-gradient(50% 50% at 38% 62%, var(--orb-spot-main) 0%, transparent 72%),
+    radial-gradient(36% 36% at 28% 30%, var(--orb-spot-light) 0%, transparent 70%),
+    radial-gradient(55% 55% at 72% 78%, var(--orb-spot-accent) 0%, transparent 72%),
+    linear-gradient(140deg, var(--orb-base-a), var(--orb-base-b));
+  filter: blur(4px) saturate(1.15);
+  animation: orb-swirl 14s linear infinite;
+}
+/* luz fixa e sombra de profundidade, por cima de tudo */
+.orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 45%),
+    radial-gradient(circle at 75% 85%, var(--orb-shade), transparent 60%);
+}
+/* camada da reação A + B -> C: fica sob o brilho (.orb::after) e é recortada
+   pela membrana externa, como se as esferas estivessem dentro do vidro. */
+.orb-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* difunde de leve: as esferas internas parecem estar dentro do vidro */
+  filter: blur(1.3px) saturate(0.9);
+  opacity: 0.92;
+}
+/* o núcleo: esfera menor, mais densa, orbitando e encostando na membrana */
+.orb-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58%;
+  height: 58%;
+  margin: -29% 0 0 -29%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 40% 35%,
+    rgba(255, 255, 255, 0.9),
+    var(--orb-core-mid) 35%,
+    var(--orb-core-edge) 70%,
+    transparent 100%
+  );
+  filter: blur(2px);
+  animation: orb-core-orbit 6s linear infinite;
+}
+@keyframes orb-core-orbit {
+  from {
+    transform: rotate(0turn) translateX(38%) rotate(0turn);
+  }
+  to {
+    transform: rotate(1turn) translateX(38%) rotate(-1turn);
+  }
+}
+@keyframes orb-swirl {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* protuberância girando em fase com o núcleo: direita, baixo, esquerda, cima */
+@keyframes orb-morph {
+  0%,
+  100% {
+    border-radius: 48% 60% 58% 46% / 52% 48% 54% 46%;
+    scale: 1.04 0.97;
+  }
+  25% {
+    border-radius: 50% 48% 56% 55% / 46% 48% 61% 60%;
+    scale: 0.97 1.04;
+  }
+  50% {
+    border-radius: 60% 48% 46% 58% / 48% 52% 46% 54%;
+    scale: 1.04 0.97;
+  }
+  75% {
+    border-radius: 55% 56% 48% 50% / 61% 60% 48% 46%;
+    scale: 0.97 1.04;
+  }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+/* scrollbar webkit no mesmo tom discreto do resto da UI */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(63, 63, 70, 0.75);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(82, 82, 91, 0.9);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Markdown das respostas do agente */
+.markdown {
+  line-height: 1.65;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0.5rem 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  color: #fafafa;
+  line-height: 1.3;
+}
+.markdown h1 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+.markdown h2 {
+  font-size: 1.15rem;
+}
+.markdown h3 {
+  font-size: 1rem;
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li {
+  margin: 0.3rem 0;
+}
+.markdown code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 5px;
+  padding: 0.1rem 0.35rem;
+  color: #67e8f9;
+}
+.markdown pre {
+  margin: 0.75rem 0;
+  padding: 0.9rem 1.1rem;
+  background: rgba(9, 9, 11, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+.markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #d4d4d8;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.markdown strong {
+  color: #fafafa;
+}
+.markdown a {
+  color: #22d3ee;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(34, 211, 238, 0.4);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.markdown a:hover {
+  color: #67e8f9;
+  text-decoration-color: currentColor;
+}
+.markdown hr {
+  border: none;
+  height: 1px;
+  margin: 1rem 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+}
+.markdown table {
+  width: 100%;
+  margin: 0.75rem 0;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.markdown th,
+.markdown td {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+.markdown th {
+  background: rgba(255, 255, 255, 0.04);
+  color: #fafafa;
+  font-weight: 600;
+}
+.markdown tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+.markdown blockquote {
+  border-left: 3px solid #3f3f46;
+  padding-left: 1rem;
+  color: #a1a1aa;
+  margin: 0.5rem 0;
+}
+
+/* Code block wrapper (adds the copy button): the margin lives on the wrapper so
+   the button aligns to the actual <pre>, not to the collapsed margin gap. */
+.markdown .codeblock {
+  margin: 0.75rem 0;
+}
+.markdown .codeblock > pre {
+  margin: 0;
+}
+
+/* Syntax highlight (rehype-highlight / highlight.js), tuned to the app palette. */
+.markdown .hljs {
+  color: #d4d4d8;
+}
+.markdown .hljs-comment,
+.markdown .hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+.markdown .hljs-keyword,
+.markdown .hljs-selector-tag,
+.markdown .hljs-built_in,
+.markdown .hljs-name,
+.markdown .hljs-literal,
+.markdown .hljs-tag {
+  color: #c4b5fd;
+}
+.markdown .hljs-string,
+.markdown .hljs-regexp,
+.markdown .hljs-addition,
+.markdown .hljs-meta-string {
+  color: #6ee7b7;
+}
+.markdown .hljs-number,
+.markdown .hljs-symbol,
+.markdown .hljs-bullet {
+  color: #fbbf24;
+}
+.markdown .hljs-title,
+.markdown .hljs-title.function_,
+.markdown .hljs-section {
+  color: #67e8f9;
+}
+.markdown .hljs-attr,
+.markdown .hljs-attribute,
+.markdown .hljs-variable,
+.markdown .hljs-template-variable,
+.markdown .hljs-class .hljs-title,
+.markdown .hljs-type {
+  color: #93c5fd;
+}
+.markdown .hljs-meta {
+  color: #9ca3af;
+}
+.markdown .hljs-deletion {
+  color: #fca5a5;
+}
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+.markdown .hljs-strong {
+  font-weight: 600;
+}
+
+/* GFM task lists: drop the disc, keep the checkbox inline. */
+.markdown .contains-task-list {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.markdown .task-list-item {
+  list-style: none;
+}
+.markdown .task-list-item input {
+  margin-right: 0.5rem;
+}
+
+/* menos movimento: desliga apenas as animacoes decorativas, nunca as do orb */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .typing-dot,
+  .animate-fade-up,
+  .animate-pop-in,
+  .animate-fade {
+    animation: none;
+  }
+  .status-ellipsis > span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
