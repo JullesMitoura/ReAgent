@@ -9,6 +9,7 @@ static/
 
 # agent runtime state
 .reagent/
+refs/
 
 # logs
 *.log
