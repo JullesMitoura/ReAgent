@@ -6,6 +6,7 @@
 import type {
   AgentBranchStatus,
   ChatMessage,
+  ErrorInfo,
   PermissionAnswer,
   PermissionRequest,
   QuestionRequest,
@@ -24,11 +25,24 @@ export interface LiveTurnHandlers {
   onToken: (text: string) => void;
   onUsage: (usage: Usage & { lastPromptTokens: number; contextWindow?: number }) => void;
   onStatus: (text: string) => void;
-  onDone: (content: string, streamedAny: boolean) => void;
+  // truncated: true quando o turno parou por ter esgotado o orçamento de iterações
+  // (não uma conclusão natural); ausente/false em qualquer outro "done".
+  onDone: (content: string, streamedAny: boolean, truncated?: boolean) => void;
   // fan-out de sub-agents paralelos (opcionais: nem todo turno tem)
   onAgentsStart?: (agents: { id: string; title: string }[]) => void;
   onAgentUpdate?: (id: string, status: AgentBranchStatus, detail?: string) => void;
   onAgentsEnd?: () => void;
+}
+
+/** Erro de turno vindo de um evento SSE "error"; carrega o error_info do backend
+ *  (kind/http_status) em vez de descartá-lo. */
+export class TurnError extends Error {
+  readonly errorInfo?: ErrorInfo;
+  constructor(message: string, errorInfo?: ErrorInfo) {
+    super(message);
+    this.name = "TurnError";
+    this.errorInfo = errorInfo;
+  }
 }
 
 async function ok(res: Response): Promise<Response> {
@@ -300,9 +314,9 @@ export async function runTurn(sessionId: string, content: string, h: LiveTurnHan
             h.onAgentsEnd?.();
             break;
           case "error":
-            throw new Error(ev.message);
+            throw new TurnError(ev.message, ev.error_info);
           case "done":
-            h.onDone(ev.content ?? "", streamedAny);
+            h.onDone(ev.content ?? "", streamedAny, ev.truncated);
             break;
         }
       }

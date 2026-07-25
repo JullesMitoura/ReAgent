@@ -54,7 +54,8 @@ export function builtinAgents(): AgentDefinition[] {
         "Step budget reached. Stop exploring and give your final dense summary now, " +
         "with concrete findings, file paths and line numbers.",
       emptyResult: "(no findings)",
-      doomStyle: "none",
+      // Read-only agents can still spin on identical grep/read; block repeats.
+      doomStyle: "worker",
       source: "built-in",
       supportsFork: true,
       supportsBackground: true,
@@ -67,7 +68,7 @@ export function builtinAgents(): AgentDefinition[] {
       getSystemPrompt: () => PLAN_SYSTEM,
       forceSummary: PLAN_FORCE_SUMMARY,
       emptyResult: "(empty plan)",
-      doomStyle: "none",
+      doomStyle: "worker",
       source: "built-in",
       supportsFork: true,
     },
@@ -79,7 +80,7 @@ export function builtinAgents(): AgentDefinition[] {
       getSystemPrompt: () => VERIFICATION_SYSTEM,
       forceSummary: VERIFICATION_FORCE_SUMMARY,
       emptyResult: "(inconclusive)",
-      doomStyle: "none",
+      doomStyle: "worker",
       source: "built-in",
       supportsFork: true,
       supportsBackground: true,

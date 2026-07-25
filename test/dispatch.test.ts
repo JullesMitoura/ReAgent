@@ -4,10 +4,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { config } from "../src/config.js";
-import { REGISTRY, activeSchemas, dispatch, _setMaxToolOutput } from "../src/tools/index.js";
+import { mapLimit } from "../src/lib/pool.js";
+import { getLogger, RootLogger } from "../src/logs.js";
+import { REGISTRY, activeSchemas, dispatch, dispatchParallel, _setMaxToolOutput } from "../src/tools/index.js";
+import type { ToolCall } from "../src/types.js";
+
+vi.mock("../src/lib/pool.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pool.js")>();
+  return { ...actual, mapLimit: vi.fn(actual.mapLimit) };
+});
 
 const originalRoot = config.root;
 let project: string;
@@ -114,5 +122,57 @@ describe("dispatch", () => {
     for (const name of names) {
       expect(Object.prototype.hasOwnProperty.call(REGISTRY, name)).toBe(true);
     }
+  });
+
+  // Traceability: dispatch() must log something about a successful tool
+  // result (name + output length) so post-hoc debugging does not depend only
+  // on query.ts's call-args/failure logging.
+  it("test_dispatch_logs_tool_name_and_output_length_on_success", async () => {
+    const root = getLogger("reagent") as RootLogger;
+    const savedLevel = root.level;
+    root.level = 10; // DEBUG: let an info-level line through regardless of env
+    const lines: string[] = [];
+    const handler = { emit: (line: string) => lines.push(line) };
+    root.handlers.push(handler);
+    try {
+      fs.writeFileSync(path.join(project, "log-me.txt"), "secret-content\n");
+      await dispatch("read_file", '{"path": "log-me.txt"}');
+    } finally {
+      root.handlers.pop();
+      root.level = savedLevel;
+    }
+    const line = lines.find((l) => l.includes("read_file"));
+    expect(line, `no log line mentioned read_file; got: ${JSON.stringify(lines)}`).toBeDefined();
+    expect(line).toContain("chars"); // logs the output LENGTH, never the content
+    expect(lines.join("\n")).not.toContain("secret-content");
+  });
+
+  // dispatchParallel is the path the model actually uses to fan out several
+  // "agent" calls in one round (its own tool description encourages this); it
+  // must respect maxAgentConcurrency for that batch, not the (usually larger)
+  // maxToolConcurrency, or the "at most N sub-agents at once" cap is bypassed.
+  describe("dispatchParallel agent concurrency cap", () => {
+    it("test_agent_batch_is_capped_by_max_agent_concurrency", async () => {
+      config.maxToolConcurrency = 8;
+      config.maxAgentConcurrency = 2;
+      const toolCalls: ToolCall[] = [
+        { id: "a1", type: "function", function: { name: "agent", arguments: "{}" } },
+        { id: "a2", type: "function", function: { name: "agent", arguments: "{}" } },
+      ];
+      await dispatchParallel(toolCalls);
+      const call = vi.mocked(mapLimit).mock.calls.at(-1);
+      expect(call?.[1]).toBe(2);
+    });
+
+    it("test_non_agent_batch_still_uses_max_tool_concurrency", async () => {
+      config.maxToolConcurrency = 8;
+      config.maxAgentConcurrency = 2;
+      const toolCalls: ToolCall[] = [
+        { id: "r1", type: "function", function: { name: "list_dir", arguments: "{}" } },
+      ];
+      await dispatchParallel(toolCalls);
+      const call = vi.mocked(mapLimit).mock.calls.at(-1);
+      expect(call?.[1]).toBe(8);
+    });
   });
 });

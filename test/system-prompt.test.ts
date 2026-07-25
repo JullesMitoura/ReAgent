@@ -98,6 +98,14 @@ describe("system-prompt", () => {
     }
   });
 
+  it("test_system_prompt_auto_approve_dangerous_caveat", () => {
+    config.autoApprove = true;
+    const p = buildSystemPrompt();
+    expect(p).toContain("without approval prompts");
+    expect(p).toContain("dangerous commands are still blocked unless");
+    expect(p).toContain("allow_dangerous");
+  });
+
   it.each([true, false])("test_system_prompt_network_text_follows_config[%s]", (network) => {
     vi.mocked(available).mockReturnValue(true);
     config.sandboxNetwork = network;
@@ -110,6 +118,27 @@ describe("system-prompt", () => {
     const p = buildSystemPrompt();
     expect(p).not.toContain("OS sandbox");
     expect(p).toContain("Sandbox and approvals:"); // the approvals section remains
+  });
+
+  it.each([true, false])("test_system_prompt_app_source_protection_follows_config[%s]", (protect) => {
+    config.protectAppSource = protect;
+    const p = buildSystemPrompt();
+    if (protect) {
+      expect(p).toContain("is read-only through the file tools");
+      expect(p).not.toContain("protect_app_source is disabled");
+    } else {
+      expect(p).toContain("protect_app_source is disabled");
+      expect(p).not.toContain("is read-only through the file tools");
+    }
+    // FILE-TOOLS-ONLY: bash/exec_command are never sandboxed away from app source,
+    // regardless of the flag's value.
+    expect(p).toContain("sandboxed away");
+  });
+
+  it("test_system_prompt_untrusted_tool_output_rule", () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain("untrusted data");
+    expect(p).toContain("ignore previous instructions");
   });
 
   it("test_system_prompt_guards_entry_point_overwrite", () => {
@@ -133,14 +162,32 @@ describe("system-prompt", () => {
   it("test_system_prompt_question_decision_guidance", () => {
     const p = buildSystemPrompt();
     expect(p).toContain("sensible defaults");
-    expect(p).toContain("exit_plan_mode");
     expect(p).toContain("When you have enough information to act, act");
+  });
+
+  it("test_system_prompt_plan_mode_exit_guidance", () => {
+    // exit_plan_mode guidance is scoped to plan mode itself (modePromptRule),
+    // not duplicated unconditionally into every prompt regardless of mode.
+    config.permissionMode = "plan";
+    try {
+      const p = buildSystemPrompt();
+      expect(p).toContain("exit_plan_mode");
+      expect(p).toContain("should I proceed?");
+    } finally {
+      config.permissionMode = "default";
+    }
   });
 
   it("test_system_prompt_spawn_and_restraint", () => {
     const p = buildSystemPrompt();
     expect(p).toContain("Spawn policy");
     expect(p).toContain("Delegate only when the payoff");
+  });
+
+  it("test_system_prompt_parallel_rule_qualifies_size", () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain("Parallel work");
+    expect(p).toContain("substantial enough to justify a separate agent");
   });
 
   it("test_system_prompt_coordinator_continue_vs_spawn", () => {

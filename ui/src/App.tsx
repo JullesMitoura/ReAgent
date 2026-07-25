@@ -177,10 +177,17 @@ export default function App() {
         }
         setMessages((m) => [...m, { role: "system" as const, content: text }]);
       },
-      // 'done' com conteudo proprio (interrupcao ou limite de iteracoes): so exibe se nada foi streamado
-      onDone: (content: string, streamedAny: boolean) => {
+      // 'done' com conteudo proprio (interrupcao ou limite de iteracoes): so exibe se nada foi
+      // streamado; truncated (orcamento de iteracoes esgotado) sempre exibe, mesmo com stream,
+      // pois e um aviso distinto da resposta ja mostrada, nao uma duplicata dela.
+      onDone: (content: string, streamedAny: boolean, truncated?: boolean) => {
         setProgress(null);
-        if (!streamedAny && content) {
+        if (truncated) {
+          setMessages((m) => [
+            ...m,
+            { role: "system" as const, content: content || "stopped early: reached the iteration limit" },
+          ]);
+        } else if (!streamedAny && content) {
           setMessages((m) => [...m, { role: "system" as const, content }]);
         }
       },
@@ -204,6 +211,12 @@ export default function App() {
           sid = await api.createSession();
           setLiveSessionId(sid);
           setActiveSession(sid);
+          // Without this, the sidebar kept showing "no conversations yet" for
+          // the entire first turn of a new session (refreshSessions() below
+          // only ran once the turn — which can run for minutes on a big
+          // request — finished), making the whole app look broken/idle on a
+          // request that was actually running.
+          refreshSessions();
         }
         await api.runTurn(sid, text, {
           ...handlers,
@@ -233,7 +246,11 @@ export default function App() {
       setActiveTone("neutral"); // volta ao normal quando a resposta e gerada
     } catch (e) {
       setActiveTone("error"); // vermelho quando teve problema
-      setMessages((m) => [...m, { role: "system", content: `error: ${e instanceof Error ? e.message : e}` }]);
+      const info = e instanceof api.TurnError && e.errorInfo ? ` (${e.errorInfo.kind})` : "";
+      setMessages((m) => [
+        ...m,
+        { role: "system", content: `error: ${e instanceof Error ? e.message : e}${info}` },
+      ]);
     } finally {
       // encerra o cursor de streaming e chips pendentes
       setMessages((m) =>

@@ -19,11 +19,12 @@ import path from "node:path";
 import { recordEdit, recordRead } from "../agent/read-state.js";
 import { config, IGNORED_DIRS, PROTECTED_FILES, realpathSafe } from "../config.js";
 import { getCloseMatches } from "../lib/similarity.js";
+import { diffPreview } from "../lib/text-diff.js";
 import { confirmFile, denialMessage } from "../permissions.js";
 import { noteChange } from "../project-context.js";
 import { currentTurn } from "../turn-context.js";
 import { findReplacement } from "./edit-cascade.js";
-import { ToolError } from "./errors.js";
+import { ArgumentError, ToolError } from "./errors.js";
 
 // Test seam: test_diagnostics_uses_devnull_stdin swaps spawnSync to
 // capture the options (equivalent of Python's subprocess.run monkeypatch).
@@ -136,8 +137,50 @@ export function assertWritable(p: string): void {
   }
 }
 
+/**
+ * Optimistic-concurrency guard against two concurrent writers silently
+ * clobbering the same file. write_file/edit_file/multi_edit/delete_file (and
+ * apply_patch) snapshot a file's bytes as `before`, then AWAIT a permission
+ * confirmation that can take anywhere from instant (auto-approve) to minutes
+ * (interactive prompt); only after that do they mutate the file. If another
+ * agent, process or the user changed the file on disk in that window, writing
+ * blind would silently discard that change with zero detection. Call this
+ * right before the actual mutation (fs.writeFileSync/fs.unlinkSync), reusing
+ * the same `before` snapshot already passed to changes.record.
+ */
+export function assertUnchangedOnDisk(p: string, before: Buffer | null): void {
+  const rel = path.relative(config.root, p);
+  if (before === null) {
+    if (fs.existsSync(p)) {
+      throw new ToolError(
+        `file changed on disk since it was read: '${rel}' was created by another process/agent ` +
+          "in the meantime; re-read it and retry",
+      );
+    }
+    return;
+  }
+  let current: Buffer;
+  try {
+    current = fs.readFileSync(p);
+  } catch {
+    throw new ToolError(
+      `file changed on disk since it was read: '${rel}' was deleted by another process/agent ` +
+        "in the meantime; re-read it and retry",
+    );
+  }
+  if (!current.equals(before)) {
+    throw new ToolError(
+      `file changed on disk since it was read: '${rel}' was modified by another process/agent ` +
+        "in the meantime; re-read it and retry",
+    );
+  }
+}
+
 // cap per returned line: minified JS/JSON must not flood the context
 const MAX_LINE_CHARS = 2000;
+
+// cap on the diff preview shown in the write/edit/multi_edit confirmation
+const PREVIEW_LINE_LIMIT = 60;
 
 function clipLine(line: string): string {
   if (line.length <= MAX_LINE_CHARS) return line;
@@ -170,6 +213,12 @@ function notFoundError(p: string, pathArg: string): ToolError {
 }
 
 export function readFile(pathArg: string, offset = 1, limit = 2000): string {
+  if (offset !== undefined && !(typeof offset === "number" && Number.isFinite(offset))) {
+    throw new ArgumentError(`'offset' must be a number, got ${JSON.stringify(offset)}`);
+  }
+  if (limit !== undefined && !(typeof limit === "number" && Number.isFinite(limit))) {
+    throw new ArgumentError(`'limit' must be a number, got ${JSON.stringify(limit)}`);
+  }
   const p = resolvePath(pathArg);
   if (!isFile(p)) throw notFoundError(p, pathArg);
   let lines: string[];
@@ -202,13 +251,22 @@ export async function writeFile(pathArg: string, content: string): Promise<strin
   const action = exists ? "overwrite" : "create";
   const rel = path.relative(config.root, p);
   const contentLines = splitLines(content);
-  let preview = contentLines.slice(0, 15).join("\n");
-  if (contentLines.length > 15) preview += "\n...";
+  const beforeBuf = exists ? fs.readFileSync(p) : null;
+  const preview = diffPreview(
+    beforeBuf ? beforeBuf.toString("utf8") : "",
+    content,
+    exists ? rel : "/dev/null",
+    rel,
+    PREVIEW_LINE_LIMIT,
+  );
   if (!(await confirmFile("write", `${action} file ${rel}`, rel, preview))) {
     // cancel/timeout swap the "User denied" for a neutral message
     return denialMessage("User denied write permission.");
   }
-  currentTurn()?.changes?.record(p, exists ? fs.readFileSync(p) : null);
+  // confirmFile can await user input for a long time; re-check the file was
+  // not touched by another writer between the snapshot above and now.
+  assertUnchangedOnDisk(p, beforeBuf);
+  currentTurn()?.changes?.record(p, beforeBuf);
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, content, "utf8");
   recordEdit(p);
@@ -239,10 +297,13 @@ export async function editFile(
   const neu = newString.replaceAll("\r\n", "\n");
   const [replacedText, replaced] = findReplacement(text, old, neu, replaceAll);
   const rel = path.relative(config.root, p);
-  const preview = `--- remove ---\n${oldString}\n--- insert ---\n${newString}`;
+  const preview = diffPreview(text, replacedText, rel, rel, PREVIEW_LINE_LIMIT);
   if (!(await confirmFile("edit", `edit file ${rel}`, rel, preview))) {
     return denialMessage("User denied edit permission.");
   }
+  // confirmFile can await user input for a long time; re-check the file was
+  // not touched by another writer between the snapshot above and now.
+  assertUnchangedOnDisk(p, before);
   currentTurn()?.changes?.record(p, before);
   let newText = replacedText;
   if (newline !== "\n") newText = newText.replaceAll("\n", newline);
@@ -251,11 +312,6 @@ export async function editFile(
   // editing a tracked manifest/config (package.json, etc.) invalidates the map
   noteChange(p, false);
   return `Edited ${rel}: ${replaced} replacement(s)` + _diagnostics(p);
-}
-
-/** Truncates a preview block so the confirmation stays readable. */
-function clip(block: string, limit = 300): string {
-  return block.length <= limit ? block : block.slice(0, limit) + "\n...";
 }
 
 /** Applies several edits in sequence on the same file, all-or-nothing (a single write). */
@@ -293,7 +349,8 @@ export async function multiEdit(
   const newline = raw.includes("\r\n") ? "\r\n" : "\n";
   // Same newline handling as editFile. Each edit operates on the result
   // of the previous one, all in memory; if any of them fails, nothing is written.
-  let text = raw.replaceAll("\r\n", "\n");
+  const original = raw.replaceAll("\r\n", "\n");
+  let text = original;
   let total = 0;
   for (let i = 1; i <= parsed.length; i++) {
     const [old, neu, replaceAll] = parsed[i - 1]!;
@@ -314,15 +371,15 @@ export async function multiEdit(
     }
   }
   const rel = path.relative(config.root, p);
-  const preview = parsed
-    .map(
-      ([old, neu], idx) =>
-        `[edit ${idx + 1}] --- remove ---\n${clip(old)}\n--- insert ---\n${clip(neu)}`,
-    )
-    .join("\n");
+  // One combined diff of the net effect of all edits (not per-edit): closer to
+  // what the user actually needs to review, and reuses the same renderer.
+  const preview = diffPreview(original, text, rel, rel, PREVIEW_LINE_LIMIT);
   if (!(await confirmFile("edit", `edit file ${rel} (${parsed.length} edits)`, rel, preview))) {
     return denialMessage("User denied edit permission.");
   }
+  // confirmFile can await user input for a long time; re-check the file was
+  // not touched by another writer between the snapshot above and now.
+  assertUnchangedOnDisk(p, before);
   currentTurn()?.changes?.record(p, before);
   if (newline !== "\n") text = text.replaceAll("\n", newline);
   fs.writeFileSync(p, text, "utf8");
@@ -339,11 +396,17 @@ export async function deleteFile(pathArg: string): Promise<string> {
   if (isDir(p)) {
     throw new ToolError(`'${pathArg}' is a directory; delete_file removes files only`);
   }
+  // snapshot BEFORE the permission await (mirrors write/edit) so the
+  // concurrency check below has something meaningful to compare against
+  const before = fs.readFileSync(p);
   const rel = path.relative(config.root, p);
   if (!(await confirmFile("delete", `delete file ${rel}`, rel))) {
     return denialMessage("User denied delete permission.");
   }
-  currentTurn()?.changes?.record(p, fs.readFileSync(p));
+  // confirmFile can await user input for a long time; re-check the file was
+  // not touched by another writer between the snapshot above and now.
+  assertUnchangedOnDisk(p, before);
+  currentTurn()?.changes?.record(p, before);
   fs.unlinkSync(p);
   noteChange(p, true); // removal changes the structure
   return `Deleted ${rel}`;

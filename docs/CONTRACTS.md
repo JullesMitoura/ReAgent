@@ -1,8 +1,9 @@
 # CONTRACTS.md: contracts between modules of the TypeScript port
 
-Normative document for all agents of the port. Each module lists the TS path
-and the public exports with exact signature, derived from the public functions
-of the corresponding Python (source of truth: `/Users/mitoura/Desktop/CodeAgent/src`).
+Normative document for this codebase. Each module lists the TS path and the
+public exports with exact signature. This started as a 1:1 port of a Python
+original (not present in this repo, and not relevant anymore since the port is
+complete); the TypeScript source under `src/` is now the sole source of truth.
 Do not invent divergent APIs; deviations must be recorded in the task return.
 
 ## 0. Global rules
@@ -12,12 +13,17 @@ Do not invent divergent APIs; deviations must be recorded in the task return.
 2. kebab-case files. Tests in `test/*.test.ts` mirroring the Python test names
    1:1 (`it("test_name_same_as_python")`).
 3. Allowed npm dependencies: `openai`, `hono`, `@hono/node-server`,
-   `node-pty`. Nothing else. SQLite via `node:sqlite` (`DatabaseSync`), builtin
-   of Node 22+.
-4. Strings from Appendix B of MIGRATION_SPEC are byte-for-byte contract (status,
-   stubs, error messages, JSON schemas of the tools). The write arguments stub
-   contains the character U+2014 between "disk" and "use": this document cannot
-   contain the character; write it in the TS source as the escape `\u2014`.
+   `node-pty`, `undici`. Nothing else. SQLite via `node:sqlite` (`DatabaseSync`),
+   builtin of Node 22+.
+4. Certain literal strings (status messages, stubs, error messages, JSON
+   schemas of the tools) are byte-for-byte contracts consumed by tests and the
+   front-end; treat exact-text assertions in `test/*.test.ts` as authoritative.
+   (These were originally specified in an Appendix B of a migration-spec
+   document that predates this repo and is no longer available anywhere in
+   it; the TS source and its tests are now the only record of the exact
+   text.) The write arguments stub contains the character U+2014 between
+   "disk" and "use": this document cannot contain the character; write it in
+   the TS source as the escape `\u2014`.
 5. Layer rule (imports from lower to upper forbidden):
    - Layer 0: `types.ts`, `config.ts`, `logs.ts`, `turn-context.ts`, `lib/*`,
      `protocol/*`. They import nothing above; `types.ts` and `lib/*` do not
@@ -82,7 +88,7 @@ export type TodoStatus = "pending" | "in_progress" | "completed";
 export interface TodoItem { content: string; status: TodoStatus }
 
 export type PermissionKind = "bash" | "write" | "edit" | "delete";
-export type PermissionAnswer = "once" | "always" | "deny";
+export type PermissionAnswer = "once" | "session" | "always" | "deny";
 export type AskOutcome = PermissionAnswer | "cancelled" | "timeout";
 
 export type AgentBranchStatus = "running" | "done" | "error";
@@ -122,7 +128,9 @@ export type ServerEvent = /* discriminated union of 13 types, snake_case */
   | { type: "agent_update"; id: string; status: AgentBranchStatus; detail?: string }
   | { type: "agents_end" }
   | { type: "error"; message: string; error_info?: ErrorInfo }
-  | { type: "done"; content: string; aborted?: true };
+  | { type: "done"; content: string; aborted?: true; truncated?: true };
+  // truncated: true is set when the tool-iteration/round budget runs out
+  // (src/agent/query.ts), never on a natural finish.
 export type ServerEventType = ServerEvent["type"];
 export type EmitFn = (ev: ServerEvent) => void;
 ```
@@ -136,7 +144,7 @@ everything in `setRoot` in the same order as Python (window BEFORE the derived t
 export const MAX_TOOL_OUTPUT: number;                 // 30000
 export const IGNORED_DIRS: ReadonlySet<string>;
 export const PROTECTED_FILES: ReadonlySet<string>;
-export const KNOWN_KEYS: ReadonlySet<string>;         // 29 keys
+export const KNOWN_KEYS: ReadonlySet<string>;         // accepted config.json keys; read src/config.ts directly for the exact, current set (grows over time — do not hardcode a count in docs or code)
 export const APP_PROTECTED_DIRS: string[];
 export function loadDotenv(dir?: string): void;       // own parser, no override
 export function realpathSafe(p: string): string;      // realpath tolerant of nonexistent
@@ -160,6 +168,23 @@ export class Config {
   toolOutputPruneMinimum: number; toolOutputStubThreshold: number;
   toolOutputStubHead: number; compactKeepLast: number;
   forceAutoApprove: boolean; forceAllowDangerous: boolean;
+  // Autonomy / orchestration knobs (config.json key in parens):
+  permissionMode: PermissionMode;                // ("permission_mode") default|plan|acceptEdits|bypass|bare
+  get/set planMode: boolean;                     // @deprecated mirror of permissionMode === "plan" ("plan_mode")
+  situationalGit: boolean;                       // ("situational_git", default true) capped git status in the prompt
+  coordinatorMode: boolean;                      // ("coordinator", default false)
+  spawnMode: "proactive" | "explicit";           // ("spawn_mode", default "proactive")
+  verbosity: Verbosity;                          // ("verbosity", default "normal") quiet|normal|verbose|debug
+  setPermissionMode(mode: PermissionMode): void; // sticky mode switch; "bypass" also forces auto-approve
+  setPlanMode(on?: boolean): void;               // shorthand for setPermissionMode("plan"|"default")
+  setCoordinatorMode(on?: boolean): void;
+  setSpawnMode(mode: "proactive" | "explicit"): void;
+  setVerbosity(v: Verbosity): void;              // sticky terminal verbosity (a later /cd keeps it)
+  worktreeAgents: boolean;                       // ("worktree_agents", default false)
+  enableDeferredTools: boolean;                  // ("deferred_tools", default false)
+  enableWorkflow: boolean;                       // ("workflow", default false)
+  maxAgentConcurrency: number;                   // ("max_agent_concurrency", default 4)
+  maxToolConcurrency: number;                    // ("max_tool_concurrency", default 8)
   userProfileFile: string;                       // mutable (test fixture)
   get azureOpenAIEndpoint(): string;             // reads process.env on the fly
   get azureOpenAIKey(): string;
@@ -214,6 +239,8 @@ export type QuestionHandler = (question: string, options: string[]) => Promise<s
 export interface TurnContext {
   changes: ChangeTracker | null;
   permissionHandler: PermissionHandler | null;
+  /** Session owning runtime-only "allow for this session" rules. */
+  sessionPermissions: SessionPermissionHost | null;
   questionHandler: QuestionHandler | null;
   steerQueue: string[];
   cancel: { set: boolean };
@@ -288,7 +315,7 @@ export function capHeadTail(text: string, cap: number): string;
 
 ```ts
 export const DOOM_LOOP_THRESHOLD: number;   // 3
-export function doomLoopMessage(name: string): string;  // literal text from Appendix B
+export function doomLoopMessage(name: string): string;  // exact literal text (byte-for-byte contract)
 export class DoomLoopDetector {
   constructor(threshold?: number);
   record(name: string, argumentsJson: string): boolean;
@@ -373,20 +400,25 @@ export function hasShellOperators(cmd: string): boolean;
 export function bashRuleSuggestion(command: string): string;
 export function loadRules(): { bash: string[]; write: string[]; edit: string[]; delete: string[] };
 export function saveRule(kind: string, pattern: string): void;  // refuses banned
+export function saveSessionRule(kind: string, pattern: string): void; // runtime-only
 export function migrateBannedRules(): void;  // one-shot with marker .reagent/permissions_migrated
-export function confirmBash(command: string): Promise<boolean>;
+export function confirmBash(command: string, description?: string): Promise<boolean>;
 export function confirmFile(kind: "write" | "edit" | "delete", action: string,
   relPath: string, preview?: string | null): Promise<boolean>;
 ```
+
+`PermissionAnswer` is `"once" | "session" | "always" | "deny"`. `"session"`
+stores a rule on `Session.sessionRules` (not persisted to
+`.reagent/permissions.json`). CLI prompt: `[y]es / [s]ession / [a]lways / [n]o`.
+File previews in the CLI are ANSI-colored unified diffs (`src/lib/terminal-diff.ts`).
 
 The Python global `ask_handler` becomes `currentTurn()?.permissionHandler`;
 without a turn or with a null handler, it falls back to the tty prompt (CLI) or
 denies on non-tty stdin. The per-thread denial message becomes an internal
 field kept in the TurnContext (never a module global). A single async mutex
-serializes rule checking + prompting (the "always" of the first request
-auto-approves the concurrent one that was waiting). File matching: fnmatch port
-with semantics documented in section 4.5 of MIGRATION_SPEC (suggestions
-generated as `dir/**`).
+serializes rule checking + prompting (the "always"/"session" of the first
+request auto-approves the concurrent one that was waiting). File matching: a
+small fnmatch port (glob semantics; suggestions generated as `dir/**`).
 
 ### src/session.ts
 
@@ -427,7 +459,7 @@ app.
 export class ChangeTracker {          // implements the interface from turn-context.ts
   startTurn(): void;
   record(path: string, before: Buffer | null): void;  // oldest snapshot per file
-  undo(): string;                     // literal messages from Appendix B
+  undo(): string;                     // exact literal messages (byte-for-byte contract)
 }
 ```
 
@@ -494,14 +526,31 @@ Re-exported by `tools/index.ts` and importable from any tool.
 ```ts
 export { ToolError, ArgumentError } from "./errors.js";
 export type ToolFn = (args: Record<string, unknown>) => string | Promise<string>;
-export const REGISTRY: Record<string, ToolFn>;   // 17 tools, names identical to Python
+export const REGISTRY: Record<string, ToolFn>;
 export const READ_ONLY_TOOLS: ReadonlySet<string>;
-// {"read_file","list_dir","glob","grep","todoread","webfetch"}
-export const TOOL_SCHEMAS: object[];             // JSON schemas copied verbatim
+// {"read_file","list_dir","glob","grep","todoread","webfetch","task_output"}
+export const TOOL_SCHEMAS: object[];             // JSON schemas, core tools only
+export function registerTool(name: string, fn: ToolFn): void;
 export function activeSchemas(): object[];       // re-evaluated per call (gating by config)
 export function headTail(output: string, limit: number): string;  // 2/3 head + 1/3 tail
 export function dispatch(name: string, argumentsJson: string): Promise<string>;  // never throws
 ```
+
+`REGISTRY` is not a fixed, hardcodable list: it starts with the ~19 core tools
+defined inline in this file (`read_file`, `write_file`, `bash`, `apply_patch`,
+...) and grows at import time as other modules call `registerTool(name, fn)`
+as a side effect of being imported — `tools/workflow.ts`, `skills/tool.ts`,
+`tools/tool-search.ts`, `tools/structured-output.ts`, `tools/parallel.ts`,
+`tools/subagent.ts`, `tools/plan-mode.ts`, `tools/send-message.ts` and
+`agents/index.ts` all do this (grep `registerTool(` across `src/` for the
+exact current list). `src/agent/query-engine.ts` is what pulls all of them in
+via side-effect imports for the real app; tests that dispatch one of these
+tools directly must import the same module themselves so it registers. Do not
+hardcode an exact tool count anywhere (docs or code) — it is derived, not
+fixed, and ~30 today across the static registry plus every dynamic
+registration. `activeSchemas()` further gates which of these are actually
+offered to the model in a given turn/mode, so it is always a subset of
+`REGISTRY`'s keys, never a superset.
 
 `dispatch`: invalid JSON returns `"Error: arguments are not valid JSON"`;
 unknown name tries `name.toLowerCase()` before
@@ -509,13 +558,13 @@ unknown name tries `name.toLowerCase()` before
 `ArgumentError` becomes `"Argument error: {msg}"`, the rest becomes
 `"Unexpected error: {Type}: {msg}"` (Type = `err.constructor.name`). Output
 above `MAX_TOOL_OUTPUT` goes through the spill to `.reagent/truncations/`
-(7-day retention) with the literal text from Appendix B.
+(7-day retention) with the exact literal text of that contract.
 
 ### src/tools/files.ts
 
 ```ts
 export function resolvePath(path: string): string;     // realpath before the containment check
-export function assertWritable(p: string): void;       // throws ToolError (texts from Appendix B)
+export function assertWritable(p: string): void;       // throws ToolError (exact error text)
 export function readFile(path: string, offset?: number, limit?: number): string;  // 1, 2000
 export function writeFile(path: string, content: string): Promise<string>;
 export function editFile(path: string, oldString: string, newString: string,
@@ -695,28 +744,47 @@ export function runTurn(agent: Agent, userInput: string): Promise<string>;
 
 ## 5. Layer 4: surfaces
 
-### src/server/main.ts
+### src/server/app.ts
+
+There is no separate `src/server/sse.ts` module — `sseLine` and the
+turn/permission/question bookkeeping all live directly in `src/server/app.ts`,
+next to the routes that use them:
 
 ```ts
-export function createApp(): Hono;           // all routes from section 3.1 of MIGRATION_SPEC
-export function main(argv?: string[]): Promise<number | void>;  // --dir, --port (default 8787)
+export function createApp(port?: number): Hono;   // all HTTP/SSE routes; port feeds the origin-guard allowlist (default 8787)
+export function sseLine(ev: ServerEvent): string;  // `data: ${JSON.stringify(ev)}\n\n`
+export const ABORT_MARKER: string;                 // history marker left after a user-initiated interruption
+
+export interface RunningTurn { cancel: { set: boolean }; steer: string[]; session: Session }
+export const _running: Map<string, RunningTurn>;         // session id -> RunningTurn
+export const _pendingPermissions: Map<string, Waiter>;    // permission id -> waiter
+export const _pendingQuestions: Map<string, Waiter>;      // question id -> waiter
 ```
+
+Turn tracking is a plain `Map`, not a class — there is no `TurnRegistry`.
+`POST /api/sessions/:sid/messages` does the atomic check-and-register inline
+(`_running.has(sid)` -> 409 `"a turn is already running for this session"`,
+else `_running.set(sid, { cancel, steer, session })`); safe on Node's
+single-threaded event loop. The turn's worker deletes its `_running` entry in
+a `finally` once it ends (normally, cancelled, or errored). `Waiter` is a
+private interface (`{ answer, fired, resolve, promise }`); `POST
+/api/permissions/:pid` and `POST /api/questions/:qid` look the id up in the
+matching map, set `answer`/`fired` and call `resolve()`, which unblocks the
+turn's polling `waitAnswer` loop (checked every 250ms, or immediately once
+`fired`). Both endpoints 404 with `{"detail": "... not found (expired?)"}`
+when the id is unknown (already answered, or the turn already ended).
 
 Bind ONLY 127.0.0.1. Errors `{"detail": "..."}`; invalid body 422. Anti
 DNS-rebinding host check BEFORE any route; origin guard only on `/api/*`
 (403 `{"detail": "origin not allowed"}`); CORS for the Vite origins (5173).
 Route `/api/sessions/search` registered BEFORE `/api/sessions/:sid`.
 
-### src/server/sse.ts
+### src/server/main.ts
 
 ```ts
-export function sseLine(ev: ServerEvent): string;   // `data: ${JSON.stringify(ev)}\n\n`
-export interface RunningTurn { cancel: { set: boolean }; steer: string[] }
-export class TurnRegistry {                  // atomic check-and-register (async mutex)
-  tryStart(sid: string): RunningTurn | null; // null = 409 (turn already running)
-  get(sid: string): RunningTurn | undefined;
-  finish(sid: string): void;
-}
+export { createApp } from "./app.js";        // re-exported; createApp itself is defined in app.ts
+export function startServer(opts?: ServeOptions): void;  // binds 127.0.0.1:port (default 8787), serves the built front
+export function main(argv?: string[]): void;              // parses --dir/--port and calls startServer
 ```
 
 ### src/server/static.ts
@@ -782,7 +850,6 @@ export function execMain(argv: string[]): Promise<number>;  // exit codes 0/1/13
    SQLite. The session file is rewritten atomically (tmp + rename) on save.
 8. `tools/todo.ts` keeps module state (Python parity); the other per-turn
    dependencies must use TurnContext.
-9. Texts in Appendix B of MIGRATION_SPEC prevail over any paraphrase of this
-   document.
-</content>
-</invoke>
+9. Exact literal strings in the TS source (status messages, stubs, error
+   text, JSON tool schemas) prevail over any paraphrase in this document; when
+   in doubt, read the source or the matching `test/*.test.ts` assertion.

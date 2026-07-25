@@ -145,6 +145,16 @@ describe("exec sessions", () => {
     expect(result).toBe("User denied command execution.");
   });
 
+  it("test_missing_command_without_session_id_returns_controlled_error", async () => {
+    // regression: exec_command with neither command nor session_id used to
+    // crash with a raw "Unexpected error: TypeError: Cannot read properties
+    // of undefined (reading 'trim')" from confirmBash's command.trim()
+    const result = await execSessions.execCommand(undefined as unknown as string);
+    expect(result.startsWith("Error:")).toBe(true);
+    expect(result).toContain("command");
+    expect(result).not.toContain("TypeError");
+  });
+
   it("test_schemas_exported", () => {
     expect(execSessions.EXEC_COMMAND_SCHEMA.function.name).toBe("exec_command");
     expect(execSessions.WRITE_STDIN_SCHEMA.function.name).toBe("write_stdin");

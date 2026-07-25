@@ -5,6 +5,15 @@
 
 export const STREAM_RETRY_LIMIT = 3;
 
+// Generic "still working" filler, re-emitted every round a turn keeps going
+// (see agent/query.ts) — NOT a state transition worth a permanent line in the
+// terminal (that produced a real bug: it stacked a new stuck "Thinking…" line
+// above the live spinner on every round, since the spinner's own \r-redraw
+// only clears its own line, never lines already scrolled past). Renderers
+// should treat this one as ephemeral (drive a live label/spinner), unlike
+// every other STATUS_* below, which are real, worth keeping on screen.
+export const STATUS_THINKING = "Thinking…";
+
 export const STATUS_COMPACTING = "compacting context...";
 export const STATUS_CTX_EXCEEDED = "context window exceeded; compacting and retrying...";
 export const STATUS_CTX_EXHAUSTED =
@@ -13,8 +22,16 @@ export const STATUS_STREAM_RETRY = (n: number, i: number): string =>
   `stream error; retrying in ${n}s (attempt ${i}/${STREAM_RETRY_LIMIT})`;
 export const STATUS_STREAM_PARTIAL = "stream interrupted; partial response kept";
 export const STATUS_TRUNCATED = "response truncated by token limit";
+export const STATUS_MAX_OUTPUT_CONTINUE = (n: number, limit: number): string =>
+  `response truncated by token limit; continuing (${n}/${limit})...`;
+export const STATUS_CONTEXT_WARNING = (pct: number): string =>
+  `context approaching limit (${pct}% used); consider /compact soon`;
 export const STATUS_CONTENT_FILTER = "response blocked by content filter";
 export const STATUS_STEERED = "user message received mid-turn";
+/** Max auto-continuations after finish_reason=length with no tool calls. */
+export const MAX_OUTPUT_RECOVERIES = 3;
+/** Emit a one-shot context warning when last_prompt_tokens exceeds this ratio. */
+export const CONTEXT_WARNING_RATIO = 0.8;
 
 /** Prefixes that mark a result as failure/denial in the terminal output. */
 export const RESULT_FAILURE_PREFIXES = [

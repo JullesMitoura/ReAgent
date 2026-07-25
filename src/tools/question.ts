@@ -13,8 +13,7 @@
  * - Prefer 2–4 options when offering choices.
  */
 
-import readline from "node:readline/promises";
-
+import { askLine } from "../lib/interactive-line.js";
 import { currentTurn } from "../turn-context.js";
 
 function cleanOptions(options?: string[] | null): string[] {
@@ -50,6 +49,11 @@ export async function question(question: string, options?: string[] | null): Pro
     return "(user unavailable in non-interactive mode; choose the best option and proceed)";
   }
 
+  // Pause the render loop's spinner first: its setInterval otherwise keeps
+  // writing "\r<frame> running..." every 100ms while this prompt is also
+  // writing text and reading stdin, visibly corrupting both (see
+  // TurnContext.beforePrompt's doc comment in turn-context.ts).
+  turn?.beforePrompt?.();
   process.stdout.write(`\n\x1b[1;35m? ${question}\x1b[0m\n`);
   if (clean.length) {
     clean.forEach((opt, i) => {
@@ -57,12 +61,11 @@ export async function question(question: string, options?: string[] | null): Pro
     });
     process.stdout.write("\x1b[2m(option number or free text)\x1b[0m\n");
   }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let answer: string;
   try {
-    answer = (await rl.question("\x1b[1;35m→ \x1b[0m")).trim();
+    answer = (await askLine("\x1b[1;35m→ \x1b[0m")).trim();
   } finally {
-    rl.close();
+    turn?.afterPrompt?.();
   }
   if (clean.length && /^\d+$/.test(answer)) {
     const n = Number(answer);

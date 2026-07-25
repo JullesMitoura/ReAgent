@@ -9,12 +9,26 @@
  * link-local (includes 169.254.169.254), private, unspecified, reserved or
  * multicast; an unparseable IP is rejected (fail-closed). Manual redirects up
  * to MAX_REDIRECTS revalidating scheme and host.
+ *
+ * DNS-rebinding TOCTOU: resolving the host for the guard check and then
+ * letting `fetch()` re-resolve it independently at connect time would let a
+ * short-TTL domain answer safely for the check and point at a blocked address
+ * (e.g. the cloud metadata IP) moments later for the real connection. Instead
+ * the host is resolved and validated exactly ONCE per hop, and the real
+ * connection is pinned to that validated address via a per-hop undici Agent
+ * with a `connect.lookup` override (Node's global fetch is undici-backed and
+ * accepts a `dispatcher`) - the HTTP client never gets a chance to resolve the
+ * hostname itself. Every redirect hop gets its own freshly guarded + pinned
+ * dispatcher, since redirects across hosts are exactly how this would be
+ * exploited.
  */
 
 import dns from "node:dns/promises";
 import net from "node:net";
+import { Agent } from "undici";
 
 import { config } from "../config.js";
+import { cancelSignal, currentTurn } from "../turn-context.js";
 import { ToolError } from "./errors.js";
 
 export const MAX_REDIRECTS = 5;
@@ -187,8 +201,18 @@ function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Resolves the URL host and rejects if any IP is not public (SSRF guard). */
-async function guardHost(url: string): Promise<void> {
+interface GuardedHost {
+  host: string;
+  address: string;
+  family: 4 | 6;
+}
+
+/**
+ * Resolves the URL host ONCE and rejects if any IP is not public (SSRF guard);
+ * returns the single address the caller must pin the real connection to,
+ * closing the DNS-rebinding TOCTOU (see the module comment above).
+ */
+async function resolveGuardedHost(url: string): Promise<GuardedHost> {
   let host = "";
   try {
     host = new URL(url).hostname;
@@ -197,7 +221,7 @@ async function guardHost(url: string): Promise<void> {
   }
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   if (!host) throw new ToolError(`invalid URL, missing host: ${url}`);
-  let infos: { address: string }[];
+  let infos: { address: string; family: number }[];
   try {
     infos = await dns.lookup(host, { all: true });
   } catch (e) {
@@ -209,6 +233,54 @@ async function guardHost(url: string): Promise<void> {
       throw new ToolError(`access denied: '${host}' resolves to blocked address ${info.address}`);
     }
   }
+  const chosen = infos[0]!;
+  const family = net.isIP(chosen.address) === 6 ? 6 : 4;
+  return { host, address: chosen.address, family };
+}
+
+type PinnedLookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: string | { address: string; family: number }[],
+  family?: number,
+) => void;
+
+/** Shape of the `connect.lookup` override undici/Node's net module accepts. */
+export type PinnedLookup = (
+  hostname: string,
+  options: { all?: boolean } | undefined,
+  callback: PinnedLookupCallback,
+) => void;
+
+/**
+ * The actual override: always answers with `address`, no matter what hostname
+ * or options it is asked about - this is what closes the DNS-rebinding TOCTOU
+ * (a rebind is exactly a hostname whose SECOND resolution differs from its
+ * first; this override never performs a second resolution at all). Exported
+ * (alongside pinnedDispatcher) for the regression test in
+ * test/webfetch.test.ts, which invokes it directly to prove that.
+ */
+export function buildPinnedLookup(address: string, family: 4 | 6): PinnedLookup {
+  return (_hostname, options, callback) => {
+    if (options?.all) {
+      callback(null, [{ address, family }]);
+    } else {
+      callback(null, address, family);
+    }
+  };
+}
+
+/**
+ * Builds an undici dispatcher that connects ONLY to `address`, regardless of
+ * what hostname is requested or what the system resolver would say at connect
+ * time: this is what actually pins the guarded IP for the real request (and
+ * for every hop of a redirect chain, since each hop builds its own).
+ */
+export function pinnedDispatcher(address: string, family: 4 | 6): Agent {
+  return new Agent({
+    connect: {
+      lookup: buildPinnedLookup(address, family),
+    },
+  });
 }
 
 // --- the tool -------------------------------------------------------------------
@@ -233,46 +305,80 @@ export async function webfetch(url: string, maxChars = 20_000): Promise<string> 
   let current = url;
   let resp: Response | null = null;
   let settled = false;
-  for (let hop = 0; hop < MAX_REDIRECTS + 1; hop++) {
-    await guardHost(current);
-    try {
-      resp = await fetch(current, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-    } catch (e) {
-      throw new ToolError(`failed to fetch ${current}: ${errMessage(e)}`);
-    }
-    if (REDIRECT_STATUS.has(resp.status)) {
-      const location = resp.headers.get("location");
-      if (!location) {
-        settled = true;
-        break;
+  const dispatchers: Agent[] = [];
+  const { signal: cancelSig, dispose: disposeCancel } = cancelSignal(currentTurn());
+  try {
+    for (let hop = 0; hop < MAX_REDIRECTS + 1; hop++) {
+      const guarded = await resolveGuardedHost(current);
+      const dispatcher = pinnedDispatcher(guarded.address, guarded.family);
+      dispatchers.push(dispatcher);
+      try {
+        const timeoutSig = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+        const signal =
+          typeof AbortSignal.any === "function"
+            ? AbortSignal.any([timeoutSig, cancelSig])
+            : timeoutSig;
+        resp = await fetch(current, {
+          redirect: "manual",
+          // The undici package's own Dispatcher type and the ambient
+          // undici-types Dispatcher used by the global RequestInit are two
+          // structurally-near-identical-but-nominally-distinct type
+          // declarations; the runtime objects are fully compatible (Node's
+          // global fetch is undici under the hood), only the type-checker
+          // needs the cast.
+          dispatcher: dispatcher as unknown as NonNullable<RequestInit["dispatcher"]>,
+          signal,
+        });
+      } catch (e) {
+        if (cancelSig.aborted || currentTurn()?.cancel.set) {
+          throw new ToolError("webfetch cancelled");
+        }
+        throw new ToolError(`failed to fetch ${current}: ${errMessage(e)}`);
       }
-      current = new URL(location, current).toString();
-      if (!current.startsWith("http://") && !current.startsWith("https://")) {
-        throw new ToolError("only http(s) URLs are allowed");
+      if (REDIRECT_STATUS.has(resp.status)) {
+        const location = resp.headers.get("location");
+        if (!location) {
+          settled = true;
+          break;
+        }
+        current = new URL(location, current).toString();
+        if (!current.startsWith("http://") && !current.startsWith("https://")) {
+          throw new ToolError("only http(s) URLs are allowed");
+        }
+        continue;
       }
-      continue;
+      settled = true;
+      break;
     }
-    settled = true;
-    break;
+    if (!settled || resp === null) {
+      throw new ToolError(`too many redirects (limit ${MAX_REDIRECTS})`);
+    }
+    if (cancelSig.aborted || currentTurn()?.cancel.set) {
+      throw new ToolError("webfetch cancelled");
+    }
+    const body = await resp.arrayBuffer();
+    if (cancelSig.aborted || currentTurn()?.cancel.set) {
+      throw new ToolError("webfetch cancelled");
+    }
+    if (body.byteLength > MAX_RESPONSE_BYTES) {
+      throw new ToolError(
+        `response too large (${Math.floor(body.byteLength / (1024 * 1024))} MB; limit ` +
+          `${Math.floor(MAX_RESPONSE_BYTES / (1024 * 1024))} MB)`,
+      );
+    }
+    const contentType = resp.headers.get("content-type") ?? "";
+    const raw = decodeBody(body, contentType);
+    let text = contentType.includes("html") ? extractText(raw) : raw;
+    if (text.length > maxChars) {
+      text = text.slice(0, maxChars) + "\n... (content truncated)";
+    }
+    return `[${resp.status}] ${url}\n\n${text}`;
+  } finally {
+    disposeCancel();
+    // Closed only after the final hop's body has been read above: an earlier
+    // close would tear down the socket the response body is still streaming from.
+    for (const dispatcher of dispatchers) {
+      dispatcher.close().catch(() => {});
+    }
   }
-  if (!settled || resp === null) {
-    throw new ToolError(`too many redirects (limit ${MAX_REDIRECTS})`);
-  }
-  const body = await resp.arrayBuffer();
-  if (body.byteLength > MAX_RESPONSE_BYTES) {
-    throw new ToolError(
-      `response too large (${Math.floor(body.byteLength / (1024 * 1024))} MB; limit ` +
-        `${Math.floor(MAX_RESPONSE_BYTES / (1024 * 1024))} MB)`,
-    );
-  }
-  const contentType = resp.headers.get("content-type") ?? "";
-  const raw = decodeBody(body, contentType);
-  let text = contentType.includes("html") ? extractText(raw) : raw;
-  if (text.length > maxChars) {
-    text = text.slice(0, maxChars) + "\n... (content truncated)";
-  }
-  return `[${resp.status}] ${url}\n\n${text}`;
 }

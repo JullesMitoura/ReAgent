@@ -9,20 +9,40 @@ interface Props {
 const FOCUSABLE =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-/** Diff-style preview: colored removal/insertion lines. */
+// Backend previews (tools/files.ts, tools/apply-patch.ts) are a unified diff:
+// "--- from" / "+++ to" headers, "@@ -l,s +l,s @@" hunk markers, then lines
+// prefixed with ' ' (context), '-' (removal) or '+' (addition). Anything else
+// (e.g. the "... (N more diff lines)" truncation marker) falls back to a
+// neutral, muted style.
+type DiffLineKind = "header" | "hunk" | "add" | "remove" | "context" | "other";
+
+function classifyDiffLine(line: string): DiffLineKind {
+  if (line.startsWith("--- ") || line.startsWith("+++ ")) return "header";
+  if (line.startsWith("@@")) return "hunk";
+  if (line.startsWith("+")) return "add";
+  if (line.startsWith("-")) return "remove";
+  if (line.startsWith(" ")) return "context";
+  return "other";
+}
+
+const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
+  header: "text-zinc-500",
+  hunk: "text-cyan-400",
+  add: "bg-emerald-500/10 text-emerald-400",
+  remove: "bg-red-500/10 text-red-400",
+  context: "text-zinc-400",
+  other: "italic text-zinc-500",
+};
+
+/** Diff-style preview: every line colored by its unified-diff prefix. */
 function DiffPreview({ text }: { text: string }) {
   return (
     <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-white/10 bg-zinc-950/60 p-3 font-mono text-xs leading-relaxed">
-      {text.split("\n").map((line, i) => {
-        let cls = "text-zinc-500";
-        if (line.startsWith("--- remove")) cls = "text-red-400";
-        else if (line.startsWith("--- insert")) cls = "text-emerald-400";
-        return (
-          <div key={i} className={cls}>
-            {line || " "}
-          </div>
-        );
-      })}
+      {text.split("\n").map((line, i) => (
+        <div key={i} className={DIFF_LINE_CLASS[classifyDiffLine(line)]}>
+          {line || " "}
+        </div>
+      ))}
     </pre>
   );
 }
@@ -94,19 +114,30 @@ export function PermissionModal({ request, onAnswer }: Props) {
         </p>
         {request.preview && <DiffPreview text={request.preview} />}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
             onClick={() => onAnswer("deny")}
             className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500/50"
           >
             Deny
           </button>
-          <button
-            onClick={() => onAnswer("always")}
-            className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-          >
-            Always allow <span className="font-mono text-cyan-400">{request.suggestion}</span>
-          </button>
+          {request.suggestion ? (
+            <>
+              <button
+                onClick={() => onAnswer("session")}
+                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                title="Allow matching actions until this session ends (not saved to disk)"
+              >
+                Allow for session
+              </button>
+              <button
+                onClick={() => onAnswer("always")}
+                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+              >
+                Always allow <span className="font-mono text-cyan-400">{request.suggestion}</span>
+              </button>
+            </>
+          ) : null}
           <button
             ref={primaryRef}
             onClick={() => onAnswer("once")}

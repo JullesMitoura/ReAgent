@@ -30,9 +30,9 @@ import { Agent, TurnCancelled } from "../agent.js";
 import { expand } from "../attachments.js";
 import { config, IGNORED_DIRS, PROTECTED_FILES } from "../config.js";
 import { classify, userMessage } from "../llm/errors.js";
-import { getLogger } from "../logs.js";
+import { getLogger, redact } from "../logs.js";
 import { Session, SessionNotFoundError } from "../session.js";
-import * as shell from "../tools/shell.js";
+import { killAllToolProcesses } from "../tools/process-registry.js";
 import { newTurnContext, runWithTurn } from "../turn-context.js";
 import type {
   AskOutcome,
@@ -109,6 +109,11 @@ function hex8(): string {
   return randomBytes(4).toString("hex");
 }
 
+/** Stack trace when available (falls back to the message), redacted before logging. */
+function errDetail(e: unknown): string {
+  return redact(e instanceof Error ? (e.stack ?? e.message) : String(e));
+}
+
 function makeWaiter(): Waiter {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => {
@@ -167,6 +172,15 @@ export function createApp(port = 8787): Hono {
   const app = new Hono();
   const ALLOWED_ORIGINS = allowedOrigins(port);
 
+  // Any exception that escapes a handler (disk I/O failure, unexpected bug)
+  // must still honor the `{"detail": "..."}` contract and go through the
+  // app's own log discipline (redacted, never console.*), instead of Hono's
+  // default handler, which writes plain text and calls console.error directly.
+  app.onError((err, c) => {
+    log.error("unhandled request error: %s %s: %s", c.req.method, c.req.path, errDetail(err));
+    return c.json({ detail: "internal error" }, 500);
+  });
+
   // 1) Anti DNS-rebinding: validate the Host header against localhost/127.0.0.1
   //    (port ignored), BEFORE any route. An external name re-resolved
   //    to 127.0.0.1 arrives with Host: evil.com and is rejected here.
@@ -210,6 +224,10 @@ export function createApp(port = 8787): Hono {
   });
 
   // --- routes ----------------------------------------------------------------
+
+  app.get("/api/health", (c) => {
+    return c.json({ ok: true });
+  });
 
   app.get("/api/info", (c) => {
     return c.json({
@@ -306,8 +324,8 @@ export function createApp(port = 8787): Hono {
       return c.json({ detail: "no running turn for this session" }, 404);
     }
     entry.cancel.set = true;
-    // interrupting the turn also kills the running bash, not just the loop
-    shell.killActive();
+    // interrupting the turn also kills bash, exec sessions, and background tasks
+    killAllToolProcesses();
     return c.json({ ok: true });
   });
 
@@ -342,8 +360,12 @@ export function createApp(port = 8787): Hono {
       return unprocessable(c, ["body", "answer"], "field required");
     }
     const answer = (payload as { answer?: unknown } | null)?.answer;
-    if (answer !== "once" && answer !== "always" && answer !== "deny") {
-      return unprocessable(c, ["body", "answer"], "unexpected value; permitted: 'once', 'always', 'deny'");
+    if (answer !== "once" && answer !== "session" && answer !== "always" && answer !== "deny") {
+      return unprocessable(
+        c,
+        ["body", "answer"],
+        "unexpected value; permitted: 'once', 'session', 'always', 'deny'",
+      );
     }
     const entry = _pendingPermissions.get(c.req.param("pid"));
     if (entry === undefined) {
@@ -450,6 +472,7 @@ export function createApp(port = 8787): Hono {
       changes: null,
       permissionHandler,
       questionHandler,
+      sessionPermissions: agent.session,
       steerQueue: running.steer,
       cancel: running.cancel, // same reference as the RunningTurn: /stop propagates
     });
@@ -468,7 +491,7 @@ export function createApp(port = 8787): Hono {
           agent.session.save();
           events.push({ type: "done", content: "(turn interrupted by user)", aborted: true });
         } else {
-          log.error("worker error on session %s: %s", sid, String(e));
+          log.error("worker error on session %s: %s", sid, errDetail(e));
           const info = classify(e);
           events.push({
             type: "error",
@@ -512,16 +535,16 @@ export function createApp(port = 8787): Hono {
           // running bash too.
           const aborted = running.cancel.set;
           running.cancel.set = true;
-          if (aborted) shell.killActive();
+          if (aborted) killAllToolProcesses();
           controller.close();
           return;
         }
         controller.enqueue(encoder.encode(sseLine(ev)));
       },
       cancel: () => {
-        // client gone: abort the turn and kill the active bash
+        // client gone: abort the turn and kill bash / exec / background tasks
         running.cancel.set = true;
-        shell.killActive();
+        killAllToolProcesses();
       },
     });
 
@@ -626,15 +649,40 @@ function listFiles(rawQuery: string, limit: number): string[] {
     } catch {
       return;
     }
-    const dirs = entries
-      .filter((e) => e.isDirectory() && !IGNORED_DIRS.has(e.name))
-      .map((e) => e.name)
-      .sort();
-    const files = entries
-      .filter((e) => !e.isDirectory())
-      .map((e) => e.name)
-      .sort();
     const prefix = relDir ? relDir + "/" : "";
+    const dirs: string[] = [];
+    const files: string[] = [];
+    for (const e of entries) {
+      if (e.isSymbolicLink()) {
+        // Symlink dirs/files that resolve outside ROOT must not leak into
+        // autocomplete (mirrors search.ts:iterFiles containment).
+        let real: string;
+        try {
+          real = fs.realpathSync(path.join(dir, e.name));
+        } catch {
+          continue;
+        }
+        const rootReal = fs.realpathSync(root);
+        if (real !== rootReal && !real.startsWith(rootReal + path.sep)) continue;
+        try {
+          if (fs.statSync(real).isDirectory()) {
+            if (!IGNORED_DIRS.has(e.name)) dirs.push(e.name);
+          } else {
+            files.push(e.name);
+          }
+        } catch {
+          continue;
+        }
+        continue;
+      }
+      if (e.isDirectory()) {
+        if (!IGNORED_DIRS.has(e.name)) dirs.push(e.name);
+      } else if (e.isFile()) {
+        files.push(e.name);
+      }
+    }
+    dirs.sort();
+    files.sort();
     for (const d of dirs) {
       const rel = prefix + d + "/";
       if (rel.toLowerCase().includes(query)) results.push(rel);

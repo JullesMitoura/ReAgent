@@ -64,6 +64,10 @@ const KIND_PREFIXES: Record<string, string> = {
   quota: "API quota exhausted: ",
   content_filter: "Response blocked by the provider content filter: ",
   context_length: "Context window exceeded: ",
+  connection: "Could not reach the LLM endpoint (check AZURE_OPENAI_ENDPOINT, network, and firewall): ",
+  unknown:
+    "Unexpected error from the LLM endpoint (if this persists, check AZURE_OPENAI_KEY/" +
+    "AZURE_OPENAI_LLM/AZURE_OPENAI_API_VERSION in .env): ",
 };
 
 export interface Classification {

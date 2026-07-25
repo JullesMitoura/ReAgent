@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import * as api from "../api";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { QuestionRequest } from "../types";
 
 interface Props {
   request: QuestionRequest;
   onAnswer: (answer: string) => void;
 }
-
-const FOCUSABLE =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 // token @caminho sendo digitado no fim do texto (igual ao compositor)
 const AT_TOKEN_RE = /(?<!\w)@([^\s@]*)$/;
@@ -20,12 +18,19 @@ export function QuestionModal({ request, onAnswer }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Fechar sem responder: como o turno fica bloqueado esperando a resposta, o
+  // fecho precisa resolver a pergunta. Envia uma nota curta para o agente seguir.
+  const close = () => onAnswer("(the user closed the question without answering)");
+
+  // Focus trap. Escape does nothing extra here beyond closing (the user must
+  // answer); Tab/Shift+Tab cycling and focus restore on unmount are handled
+  // by the shared hook.
+  const { handleKeyDown } = useFocusTrap(dialogRef, { onEscape: close });
+
   // Foco inicial no input e restauração ao desmontar.
   // Move focus to the text input on mount, restore on unmount.
   useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
     inputRef.current?.focus();
-    return () => previouslyFocused?.focus();
   }, []);
 
   // Autocomplete de @arquivo: consulta o backend enquanto o token é digitado.
@@ -53,10 +58,6 @@ export function QuestionModal({ request, onAnswer }: Props) {
   const submit = () => {
     if (text.trim()) onAnswer(text.trim());
   };
-
-  // Fechar sem responder: como o turno fica bloqueado esperando a resposta, o
-  // fecho precisa resolver a pergunta. Envia uma nota curta para o agente seguir.
-  const close = () => onAnswer("(the user closed the question without answering)");
 
   const applyFile = (path: string) => {
     const match = text.match(AT_TOKEN_RE);
@@ -95,37 +96,6 @@ export function QuestionModal({ request, onAnswer }: Props) {
     if (e.key === "Enter") {
       e.preventDefault();
       submit();
-    }
-  }
-
-  // Focus trap. Escape não faz nada (o usuário precisa responder).
-  // Focus trap. Escape does nothing (the user must answer).
-  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      // Escape fecha o modal (dispensa a pergunta). O fechamento do popover de
-      // arquivos já foi tratado antes (stopPropagation no input), então aqui só
-      // chega quando a lista está fechada.
-      e.stopPropagation();
-      e.preventDefault();
-      close();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const container = dialogRef.current;
-    if (!container) return;
-    const focusable = Array.from(
-      container.querySelectorAll<HTMLElement>(FOCUSABLE),
-    ).filter((el) => !el.hasAttribute("disabled"));
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && active === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
     }
   }
 

@@ -161,4 +161,43 @@ describe("permissions", () => {
       "--allow-dangerous",
     );
   });
+
+  it("test_ask_lock_is_per_turn_not_global_across_sessions", async () => {
+    // Two unrelated turns (as if two different server sessions each started a
+    // turn that needs a permission prompt at the same time) must not block
+    // each other: a lock keyed globally to the process would make turn B wait
+    // for turn A's still-pending prompt, even though nothing about A and B is
+    // actually shared (no sub-agent relationship, no common TurnContext).
+    let resolveA: ((answer: "once") => void) | null = null;
+    const ctxA = newTurnContext({
+      permissionHandler: () => new Promise((resolve) => { resolveA = resolve; }),
+    });
+    const ctxB = newTurnContext({ permissionHandler: async () => "once" as const });
+
+    const order: string[] = [];
+    const turnA = runWithTurn(ctxA, async () => {
+      const result = await permissions.confirmBash("git push origin main");
+      order.push("A");
+      return result;
+    });
+
+    // Let turnA's ask() reach its permissionHandler (all microtask-scheduled,
+    // so this drains before the next macrotask runs).
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resolveA).not.toBeNull();
+
+    const turnB = runWithTurn(ctxB, async () => {
+      const result = await permissions.confirmBash("git push origin main");
+      order.push("B");
+      return result;
+    });
+
+    // turnB resolves without waiting for turnA's still-pending prompt.
+    await expect(turnB).resolves.toBe(true);
+    expect(order).toEqual(["B"]);
+
+    resolveA!("once");
+    await turnA;
+    expect(order).toEqual(["B", "A"]);
+  });
 });

@@ -19,8 +19,15 @@ export interface TodoItem {
 
 export type PermissionKind = "bash" | "write" | "edit" | "delete";
 
-/** Answer the user gives to a permission request. */
-export type PermissionAnswer = "once" | "always" | "deny";
+/**
+ * Answer the user gives to a permission request.
+ * - once: allow this call only
+ * - session: allow matching actions for the rest of this process session
+ *   (not persisted to permissions.json)
+ * - always: persist a rule in .reagent/permissions.json
+ * - deny: reject
+ */
+export type PermissionAnswer = "once" | "session" | "always" | "deny";
 
 /**
  * Full outcome of an askHandler: the 3 user answers plus the two synthetic
@@ -111,7 +118,7 @@ export type ServerEvent =
   | { type: "agent_update"; id: string; status: AgentBranchStatus; detail?: string }
   | { type: "agents_end" }
   | { type: "error"; message: string; error_info?: ErrorInfo }
-  | { type: "done"; content: string; aborted?: true };
+  | { type: "done"; content: string; aborted?: true; truncated?: true };
 
 export type ServerEventType = ServerEvent["type"];
 

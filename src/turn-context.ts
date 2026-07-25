@@ -28,8 +28,8 @@ export interface ChangeTracker {
 }
 
 /**
- * Permission hook (server/front or terminal prompt). The 5 outcomes:
- * once/always/deny answered by the user; cancelled/timeout synthetic.
+ * Permission hook (server/front or terminal prompt). Outcomes:
+ * once/session/always/deny answered by the user; cancelled/timeout synthetic.
  */
 export type PermissionHandler = (
   kind: PermissionKind,
@@ -37,6 +37,19 @@ export type PermissionHandler = (
   preview: string | null,
   suggestion: string,
 ) => Promise<AskOutcome>;
+
+/** Runtime-only permission rules scoped to the current Session (not persisted). */
+export interface SessionPermissionRules {
+  bash: string[];
+  write: string[];
+  edit: string[];
+  delete: string[];
+}
+
+/** Host that owns session-scoped permission rules (Session implements this). */
+export interface SessionPermissionHost {
+  sessionRules: SessionPermissionRules;
+}
 
 /** Hook for the question tool; returns the user's answer (or synthetic text). */
 export type QuestionHandler = (question: string, options: string[]) => Promise<string>;
@@ -54,6 +67,11 @@ export interface TurnContext {
   changes: ChangeTracker | null;
   /** null: no front connected (CLI decides between tty prompt and denial) */
   permissionHandler: PermissionHandler | null;
+  /**
+   * Session that owns runtime-only "allow for this session" rules.
+   * Set by Agent.runEvents from the owning Session; null outside a turn.
+   */
+  sessionPermissions: SessionPermissionHost | null;
   /** null: non-interactive mode (question replies with the synthetic text) */
   questionHandler: QuestionHandler | null;
   /** user messages arrived mid-turn (steering), in order */
@@ -82,6 +100,31 @@ export interface TurnContext {
    * no explicit reset is needed).
    */
   toolOutputChars: number;
+  /**
+   * Identity shared by every nested/cloned TurnContext descending from the
+   * same top-level turn (agents/run.ts forks a new context object per
+   * sub-agent via `{...parentTurn, ...overrides}` so each can get its own
+   * changes/toolRoot/bgNotify*, but the object spread copies this field's
+   * *reference* forward unchanged). permissions.ts keys its per-turn ask-lock
+   * on this, not on the TurnContext object itself, so sibling sub-agents
+   * spawned from the same parent still serialize their permission prompts
+   * against each other instead of racing concurrent readline reads on the
+   * same stdin.
+   */
+  askLockRoot: object;
+  /**
+   * Terminal-renderer hooks around an interactive permission/question prompt
+   * (set by agent-render.ts's runTurn, left undefined for non-CLI fronts).
+   * permissions.ts/question.ts call these right before/after printing their
+   * own interactive prompt so the render loop can pause its spinner first:
+   * without this, the spinner's own setInterval kept writing `\r<frame>
+   * running...` every 100ms while promptChoice()/rl.question() was also
+   * writing the permission text and reading stdin, visibly interleaving/
+   * corrupting both (e.g. "running...yya]lways allow foo.html / [n]o...").
+   * Optional and best-effort: never let a renderer bug break a prompt.
+   */
+  beforePrompt?: () => void;
+  afterPrompt?: () => void;
 }
 
 /** New context with neutral defaults; override what the caller injects. */
@@ -89,6 +132,7 @@ export function newTurnContext(partial: Partial<TurnContext> = {}): TurnContext 
   return {
     changes: null,
     permissionHandler: null,
+    sessionPermissions: null,
     questionHandler: null,
     steerQueue: [],
     cancel: { set: false },
@@ -99,6 +143,7 @@ export function newTurnContext(partial: Partial<TurnContext> = {}): TurnContext 
     enabledDeferred: new Set<string>(),
     allowQuestion: true,
     toolOutputChars: 0,
+    askLockRoot: {},
     ...partial,
   };
 }
@@ -114,4 +159,27 @@ export function runWithTurn<T>(ctx: TurnContext, fn: () => T): T {
 /** Current turn's context, or undefined outside a turn. */
 export function currentTurn(): TurnContext | undefined {
   return turnStorage.getStore();
+}
+
+/**
+ * Bridges the turn's cooperative `cancel.set` flag into a real AbortSignal, so
+ * a blocking LLM HTTP call can be aborted promptly instead of only being
+ * checked between rounds (once per streamed token/tool call at best, and not
+ * at all while a single non-streaming call or a stuck connection is in
+ * flight). Polls at a short interval rather than requiring every
+ * `cancel.set = true` call site to also fire an event; the caller MUST call
+ * dispose() (typically in a finally) once its operation settles, so the timer
+ * does not outlive it.
+ */
+export function cancelSignal(ctx: TurnContext | undefined): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  if (!ctx || ctx.cancel.set) {
+    if (ctx?.cancel.set) controller.abort();
+    return { signal: controller.signal, dispose: () => {} };
+  }
+  const interval = setInterval(() => {
+    if (ctx.cancel.set) controller.abort();
+  }, 100);
+  interval.unref?.(); // a poll timer must never keep the process alive on its own
+  return { signal: controller.signal, dispose: () => clearInterval(interval) };
 }

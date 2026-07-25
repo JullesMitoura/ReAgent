@@ -239,6 +239,17 @@ export async function execCommand(
     return pollSession(Math.trunc(Number(sessionId)), waitS);
   }
 
+  // No session_id: this call must start a NEW session, which requires a
+  // command. Validate before it reaches confirmBash (which does
+  // command.trim() and would otherwise crash with a raw TypeError on
+  // undefined/non-string input).
+  if (typeof command !== "string" || !command.trim()) {
+    return (
+      "Error: 'command' is required to start a new exec session " +
+      "(pass session_id instead to continue an existing one)"
+    );
+  }
+
   const pty = await loadPty();
   if (pty === null) return DISABLED_MSG;
 
@@ -339,8 +350,26 @@ export function cleanup(): void {
 }
 
 // Never leak dev servers on process exit (Python's atexit). On signals, only
-// terminate the process if this handler is the sole owner of the signal: a REPL or
-// server that installs its own handler keeps control of the exit.
+// force-terminate the process when nobody else claimed ownership of the exit
+// path: a REPL registers its OWN Ctrl+C handling via readline's interface-
+// level 'SIGINT' event (rl.on("SIGINT", ...)), not process.on("SIGINT", ...),
+// so `process.listenerCount(sig)` never actually reflects that — this module
+// loads (and registers its own process-level listener) well before the REPL
+// even starts, so the count was always exactly 1 regardless of context,
+// meaning a stray SIGINT (e.g. one delivered while readline briefly isn't in
+// raw/interactive mode between turns) force-killed the WHOLE process via
+// process.exit() here, bypassing the REPL's graceful "See you!" shutdown and
+// its own turn-cancellation logic entirely — visible as Node's "Warning:
+// Detected unsettled top-level await" at the bin/reagent.js entry point,
+// since the process died mid-await instead of main() ever resolving.
+let signalOwnerClaimed = false;
+/** Called once by a CLI entry point (REPL/exec/serve) that manages its own
+ * signal-driven shutdown/cancellation, so this fallback backs off instead of
+ * racing it. PTY cleanup on ANY exit path is still guaranteed by the
+ * unconditional process.on("exit", cleanup) below. */
+export function claimSignalOwnership(): void {
+  signalOwnerClaimed = true;
+}
 process.on("exit", cleanup);
 for (const [sig, code] of [
   ["SIGTERM", 143],
@@ -348,7 +377,7 @@ for (const [sig, code] of [
 ] as [NodeJS.Signals, number][]) {
   process.on(sig, () => {
     cleanup();
-    if (process.listenerCount(sig) === 1) process.exit(code);
+    if (!signalOwnerClaimed) process.exit(code);
   });
 }
 

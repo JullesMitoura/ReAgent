@@ -16,7 +16,7 @@
 
 import { Agent } from "../agent.js";
 import type { ChangeTracker } from "../changes.js";
-import { config } from "../config.js";
+import { config, parseVerbosity, VERBOSITY_LEVELS } from "../config.js";
 import { expand } from "../attachments.js";
 import { expandArguments, loadCommands } from "../custom-commands.js";
 import { hooksConfigured } from "../hooks/runner.js";
@@ -41,6 +41,7 @@ function sgr(code: string, text: string): string {
 export const c = {
   dim: (t: string): string => sgr("2", t),
   red: (t: string): string => sgr("31", t),
+  green: (t: string): string => sgr("32", t),
   yellow: (t: string): string => sgr("33", t),
   cyan: (t: string): string => sgr("36", t),
   blue: (t: string): string => sgr("94", t), // bright blue: readable on dark terminals
@@ -68,10 +69,13 @@ export const HELP = `${c.bold("Commands:")}
   /mode [name]       default|plan|acceptEdits|bypass|bare (alias: /plan on|off)
   /coordinator [on|off]  toggle coordinator orchestration mode
   /spawn [proactive|explicit]  sub-agent spawn policy (Codex-style)
+  /verbosity [level] quiet|normal|verbose|debug (how much execution detail is shown)
   /exit              quit
 
 ${c.bold("Attachment shortcuts:")}
-  @src/main.py       attach a file's content to the prompt
+  @path              type @ to attach a file (suggestions appear as you type)
+  Tab or →           accept the highlighted suggestion
+  @src/cli/main.ts   attach a file's content to the prompt
   @src/tools/        attach a directory listing`;
 
 export const INIT_PROMPT =
@@ -360,6 +364,22 @@ export async function handleCommand(cmd: string, agent: Agent, ui: ReplUI): Prom
       return agent;
     }
     ui.print(c.yellow(`spawn mode: ${config.spawnMode}`));
+    return agent;
+  }
+
+  if (name === "/verbosity") {
+    const argl = arg.trim().toLowerCase();
+    if (!argl) {
+      ui.print(c.dim(`verbosity: ${config.verbosity} (levels: ${VERBOSITY_LEVELS.join("|")})`));
+      return agent;
+    }
+    const v = parseVerbosity(argl);
+    if (!v) {
+      ui.print(c.red(`Unknown verbosity. Use: ${VERBOSITY_LEVELS.join("|")}`));
+      return agent;
+    }
+    config.setVerbosity(v);
+    ui.print(c.yellow(`verbosity: ${config.verbosity}`));
     return agent;
   }
 

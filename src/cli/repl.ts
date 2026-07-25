@@ -1,24 +1,19 @@
 /**
- * Port of the interactive loop in src/main.py (REPL): prompt with node:readline,
- * persistent history, a completer for slash commands and @files, and the
- * handling of Ctrl+C (kills the active bash, the REPL survives).
+ * Interactive REPL: prompt with live @file completion, persistent history, and
+ * Ctrl+C handling (cancels the turn / kills tool processes; the REPL survives).
  *
- * Python's prompt_toolkit has no 1:1 equivalent (section 4.6 of the
- * MIGRATION_SPEC): phase 1 uses node:readline with history + completer. The
- * inline @ highlight (lexer) is cosmetic and not ported here.
+ * Line editing uses lib/repl-input.ts (raw-mode) rather than node:readline's
+ * Tab completer — Cursor's integrated terminal often swallows Tab, which made
+ * @attachments look broken. Suggestions appear as you type after `@`.
  *
- * Cooperative cancellation (Python KeyboardInterrupt -> Node): the Agent only
- * stops when emit raises; since the agent-render render does not raise, we use an
- * `out` that swallows output after the cancel (the orphan turn stays silent) and
- * a race against a cancel signal. Ctrl+C during the turn calls shell.killActive()
- * (unblocks the running bash) and hands control back to the REPL with "Turn
- * interrupted." in red; Ctrl+C at the prompt exits with "See you!".
+ * Cooperative cancellation: Ctrl+C during the turn sets the TurnContext cancel
+ * flag and kills tool processes; the REPL prints "Turn interrupted." Ctrl+C at
+ * the prompt exits with "See you!".
  */
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import readline from "node:readline";
 
 import { Agent, TurnCancelled } from "../agent.js";
 import { runTurn } from "../agent-render.js";
@@ -29,19 +24,24 @@ import { loadCommands } from "../custom-commands.js";
 import { IGNORED_DIRS, PROTECTED_FILES } from "../config.js";
 import { realpathSafe } from "../config.js";
 import { runSessionEndHooks } from "../hooks/runner.js";
+import { setSharedLineReader } from "../lib/interactive-line.js";
+import { PromptClosedError, ReplInput } from "../lib/repl-input.js";
 import { getLogger } from "../logs.js";
-import { killActive } from "../tools/shell.js";
+import { killAllToolProcesses } from "../tools/process-registry.js";
 import { newTurnContext, runWithTurn } from "../turn-context.js";
 import { c, handleCommand } from "./slash-commands.js";
 import type { ReplUI } from "./slash-commands.js";
 
 const log = getLogger("reagent.cli");
 
-// Builtin commands offered by the completer (the same set as /help).
+// Builtin commands offered by the completer. Must track every name handled
+// in slash-commands.ts's handleCommand() — a name missing here is invisible
+// to Tab-completion even though it works and is documented in /help.
 const BUILTIN_COMMANDS = [
   "/help", "/new", "/clear", "/cd", "/sessions", "/resume", "/fork",
   "/search", "/undo", "/init", "/context", "/compact", "/todos",
-  "/usage", "/tools", "/exit", "/quit",
+  "/usage", "/tools", "/doctor", "/mode", "/plan", "/coordinator",
+  "/spawn", "/verbosity", "/exit", "/quit",
 ];
 
 // --- persistent history ------------------------------------------------------
@@ -192,13 +192,25 @@ export function completeLine(line: string): [string[], string] {
   return [[], line];
 }
 
-// --- prompt session (readline) -----------------------------------------------
+/** Longest shared prefix of `strs` ("" when none / empty). */
+export function longestCommonPrefix(strs: string[]): string {
+  if (strs.length === 0) return "";
+  let prefix = strs[0]!;
+  for (let i = 1; i < strs.length; i++) {
+    const s = strs[i]!;
+    while (!s.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+      if (!prefix) return "";
+    }
+  }
+  return prefix;
+}
+
+// --- prompt session ----------------------------------------------------------
 
 const PROMPT = "\n" + c.cyan("❯ ");
 
-/** Shows the @references that will be expanded into the agent context.
- * readline cannot safely color individual spans inside its editable buffer, so
- * acknowledgement is rendered immediately after submission instead. */
+/** Shows the @references that will be expanded into the agent context. */
 function printAttachmentSummary(input: string): void {
   const attachments = Array.from(new Set(Array.from(input.matchAll(ATTACHMENT_RE), (match) => match[0])));
   if (attachments.length === 0) return;
@@ -219,65 +231,53 @@ export interface PromptSessionLike {
 export class PromptClosed extends Error {}
 
 /**
- * Builds the prompt session (equivalent of _make_prompt_session). The readline
- * is created lazily (construction must not hold stdin in the tests).
+ * Builds the prompt session. Uses ReplInput (raw-mode line editor) so @file
+ * suggestions appear as you type — node:readline's Tab completer is often
+ * swallowed by Cursor's integrated terminal.
  */
 export function makePromptSession(): PromptSessionLike {
   const history = promptHistory();
-  let rl: readline.Interface | null = null;
+  const input = new ReplInput();
   let turnCancel: (() => void) | null = null;
-  let pendingReject: ((e: Error) => void) | null = null;
+  let installed = false;
 
-  const onSigint = (): void => {
-    // during a turn: delegate to the turn's cancel; at the prompt: end the REPL
-    if (turnCancel) {
-      turnCancel();
-      return;
-    }
-    const reject = pendingReject;
-    pendingReject = null;
-    if (reject) reject(new PromptClosed());
-  };
-
-  const ensureRl = (): readline.Interface => {
-    if (rl) return rl;
-    rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: Boolean(process.stdin.isTTY),
-      completer: (line: string) => completeLine(line),
-      history: history.load(),
-      historySize: 1000,
-    });
-    rl.on("SIGINT", onSigint);
-    rl.on("close", () => {
-      const reject = pendingReject;
-      pendingReject = null;
-      if (reject) reject(new PromptClosed());
-    });
-    return rl;
+  const ensureInstalled = (): void => {
+    if (installed) return;
+    installed = true;
+    // Permissions / question / trust must share this same reader (see
+    // lib/interactive-line.ts). Plain ask — no @ completer — for those prompts.
+    setSharedLineReader((prompt) =>
+      input.ask(prompt, {
+        onCtrlC: () => {
+          if (turnCancel) turnCancel();
+        },
+      }),
+    );
   };
 
   return {
     history,
     completer: completeLine,
     prompt(): Promise<string> {
-      const iface = ensureRl();
-      return new Promise<string>((resolve, reject) => {
-        pendingReject = reject;
-        iface.question(PROMPT, (answer) => {
-          pendingReject = null;
-          const trimmed = answer.trim();
-          if (trimmed) history.append(trimmed);
-          resolve(trimmed);
+      ensureInstalled();
+      return input
+        .ask(PROMPT, {
+          completer: completeLine,
+          history: history.load(),
+          onSubmit: (line) => history.append(line),
+          // No onCtrlC: Ctrl+C rejects with PromptClosedError → "See you!".
+        })
+        .catch((e) => {
+          if (e instanceof PromptClosedError) throw new PromptClosed();
+          throw e;
         });
-      });
     },
     setTurnCancel(onCancel: (() => void) | null): void {
       turnCancel = onCancel;
     },
     close(): void {
-      if (rl) rl.close();
+      input.close();
+      setSharedLineReader(null);
     },
   };
 }
@@ -318,6 +318,13 @@ export async function runTurnCancelable(
   install: (onCancel: () => void) => () => void,
 ): Promise<void> {
   const state = { cancelled: false };
+  // Same object referenced by the TurnContext below (like the server's
+  // RunningTurn.cancel): setting it here is what actually stops the agent
+  // loop, via agent-render's emit throwing TurnCancelled on the next event.
+  // Racing runTurn() against `cancelled` alone only stops *awaiting* it; the
+  // loop itself would otherwise keep running detached (more LLM/tool calls,
+  // its own session.save() racing the next turn's) after "Turn interrupted."
+  const cancel = { set: false };
   let reject: (e: Error) => void = () => {};
   const cancelled = new Promise<never>((_, r) => {
     reject = r;
@@ -325,13 +332,14 @@ export async function runTurnCancelable(
   const dispose = install(() => {
     if (state.cancelled) return;
     state.cancelled = true;
-    killActive(); // unblocks the running bash
+    cancel.set = true;
+    killAllToolProcesses(); // bash + exec sessions + background tasks
     reject(new TurnCancelled());
   });
   const out = makeCancelAwareOut(base, state);
   try {
-    await runWithTurn(newTurnContext({ changes }), () =>
-      Promise.race([runTurn(agent, prompt, out), cancelled]),
+    await runWithTurn(newTurnContext({ changes, cancel, sessionPermissions: agent.session }), () =>
+      Promise.race([runTurn(agent, prompt, out, changes), cancelled]),
     );
   } finally {
     dispose();
@@ -360,7 +368,7 @@ export async function runRepl(agent: Agent): Promise<void> {
       input = await session.prompt();
     } catch (e) {
       if (e instanceof PromptClosed) {
-        process.stdout.write("\nSee you!\n");
+        process.stdout.write(c.green("See you!") + "\n");
         break;
       }
       throw e;
@@ -379,7 +387,7 @@ export async function runRepl(agent: Agent): Promise<void> {
         continue;
       }
       if (result === null) {
-        process.stdout.write("See you!\n");
+        process.stdout.write(c.green("See you!") + "\n");
         break;
       }
       agent = result;
@@ -400,6 +408,16 @@ export async function runRepl(agent: Agent): Promise<void> {
       }
     }
   }
+  // A persistent exec_command (PTY) session or an un-backgrounded shell
+  // child left running keeps a live handle open; process.on("exit", cleanup)
+  // in exec-sessions.ts/process-registry.ts can never fire to catch it,
+  // since THAT handle is exactly what stops the event loop from ever going
+  // idle enough to reach "exit" in the first place. Without killing them
+  // here, "/quit"/Ctrl+D print "See you!" and the loop below ends, but the
+  // process itself never actually terminates — the terminal is left in a
+  // half-attached state (no prompt, raw keystrokes just echo back) until
+  // it's killed externally.
+  killAllToolProcesses();
   try {
     runSessionEndHooks();
   } catch {

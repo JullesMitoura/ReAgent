@@ -335,6 +335,21 @@ describe("apply_patch", () => {
     expect(chamadas[0]![2]).toContain("+oi"); // short diff preview
   });
 
+  it("test_write_step_aborts_when_file_changed_concurrently", async () => {
+    // confirmFile can await user input for a long time; the permissionHandler
+    // here plays the role of a concurrent writer that lands its own change
+    // while this patch is still waiting for approval
+    write("u2.txt", "original\n");
+    const msg = await toolErrorMessage(
+      applyWithHandler(_patch("*** Update File: u2.txt", "-original", "+alterado"), async () => {
+        fs.writeFileSync(path.join(project, "u2.txt"), "concurrent-writer\n");
+        return "once";
+      }),
+    );
+    expect(msg).toContain("changed on disk");
+    expect(read("u2.txt")).toBe("concurrent-writer\n"); // never clobbered
+  });
+
   it("test_negacao_parcial_tambem_e_atomica", async () => {
     // approves the first file, denies the second: not even the approved one is written
     write("e.txt", "um\n");

@@ -26,7 +26,7 @@ export interface PermissionRequest {
   suggestion: string;
 }
 
-export type PermissionAnswer = "once" | "always" | "deny";
+export type PermissionAnswer = "once" | "session" | "always" | "deny";
 
 export interface SessionMeta {
   id: string;
@@ -40,6 +40,11 @@ export interface SessionMeta {
 }
 
 export type AgentBranchStatus = "running" | "done" | "error";
+
+export interface ErrorInfo {
+  kind: string;
+  http_status: number | null;
+}
 
 /** Sub-agent despachado em paralelo pelo agente principal (fan-out). */
 export interface AgentBranch {
@@ -96,5 +101,5 @@ export type ServerEvent =
   | { type: "agents_start"; agents: { id: string; title: string }[] }
   | { type: "agent_update"; id: string; status: AgentBranchStatus; detail?: string }
   | { type: "agents_end" }
-  | { type: "error"; message: string }
-  | { type: "done"; content: string };
+  | { type: "error"; message: string; error_info?: ErrorInfo }
+  | { type: "done"; content: string; truncated?: true };

@@ -41,6 +41,30 @@ export class ChangeTracker implements ChangeTrackerContract {
     }
   }
 
+  /**
+   * Read-only snapshot of what changed this turn, for the terminal's end-of-turn
+   * summary. Derived by comparing each recorded snapshot against the file's
+   * CURRENT state (a file created then deleted within the same turn nets out
+   * to nothing and is omitted). Does not consume the tracker: undo() still
+   * works after calling this.
+   */
+  summary(): { created: string[]; modified: string[]; deleted: string[] } {
+    const created: string[] = [];
+    const modified: string[] = [];
+    const deleted: string[] = [];
+    for (const [p, before] of this.changes) {
+      const existsNow = fs.existsSync(p);
+      if (before === null) {
+        if (existsNow) created.push(rel(p));
+      } else if (existsNow) {
+        modified.push(rel(p));
+      } else {
+        deleted.push(rel(p));
+      }
+    }
+    return { created, modified, deleted };
+  }
+
   undo(): string {
     if (this.changes.length === 0) {
       return "Nothing to undo (no file changes recorded in the last turn).";

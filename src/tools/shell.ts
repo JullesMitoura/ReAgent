@@ -15,7 +15,7 @@ import type { ChildProcess } from "node:child_process";
 import os from "node:os";
 import type { Readable } from "node:stream";
 
-import { isDangerousCommand } from "../command-safety.js";
+import { isDangerousCommand, isSafeCommand } from "../command-safety.js";
 import { config } from "../config.js";
 import { scrubbedEnv } from "../lib/env-scrub.js";
 import { HeadTailBuffer, capHeadTail, holdIncompleteUtf8 } from "../lib/head-tail-buffer.js";
@@ -315,14 +315,15 @@ export interface BashOptions {
 }
 
 /**
- * Codex-style flow: sandbox first, approval only on failure.
+ * Codex-style flow with a safer permission gate.
  *
- * 1. Dangerous command: always asks; if approved, runs WITHOUT sandbox (the
- *    user's explicit approval is the authorization).
- * 2. Sandbox available: runs contained DIRECTLY, without asking (the
- *    containment is the permission). If the output looks like a Seatbelt
- *    denial, then it asks; if approved, re-executes outside the sandbox.
- * 3. No sandbox: classic flow with confirmBash.
+ * 1. Dangerous command: always asks; if approved, runs WITHOUT sandbox.
+ * 2. Safe (provably read-only) + sandbox: runs contained without asking.
+ * 3. Non-safe + sandbox: ALWAYS asks first, then runs sandboxed. Seatbelt
+ *    still allows broad host reads, so "not dangerous" must never mean
+ *    "no prompt" (e.g. `cp ~/.npmrc stolen`). On sandbox denial, re-runs
+ *    unsandboxed (already approved for non-safe; prompts for safe).
+ * 4. No sandbox: classic flow with confirmBash.
  *
  * run_in_background short-circuits the sandbox flow: permission is checked
  * upfront and the command runs detached via background-tasks.ts.
@@ -334,6 +335,14 @@ export async function bash(
 ): Promise<string> {
   if (!command || !command.trim()) {
     return "Error: empty command";
+  }
+  // A wrong-typed/NaN/non-positive timeout (e.g. timeout: "abc") would make
+  // Math.min(timeout, 600) produce NaN and setTimeout(fn, NaN) fire almost
+  // immediately, reported back as a bogus "timed out after NaNs". Validate
+  // up front and fail with a controlled message instead, same style as the
+  // empty-command check above.
+  if (timeout !== undefined && !(typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0)) {
+    return `Error: 'timeout' must be a positive number of seconds, got ${JSON.stringify(timeout)}`;
   }
   const effectiveTimeout = Math.min(timeout, 600);
   const { description } = opts;
@@ -360,21 +369,33 @@ export async function bash(
     return result;
   }
 
+  const safe = isSafeCommand(command);
+  // Non-safe commands require an explicit approval before any execution,
+  // including inside Seatbelt (which grants broad host file-read).
+  if (!safe) {
+    if (!(await confirmBash(command, description))) {
+      return denialMessage("User denied command execution.");
+    }
+  }
+
   if (available()) {
     const [code, result] = await run(wrap(command), effectiveTimeout);
     if (code !== null && looksLikeDenial(code, result)) {
-      if (await confirmBash(command, description)) {
-        const [, retry] = await run(shellArgv(command), effectiveTimeout);
-        return `[ran unsandboxed after approval]\n${retry}`;
+      // Safe commands were never prompted; escaping the sandbox needs a yes.
+      // Non-safe already approved above — retry unsandboxed without re-asking.
+      if (safe && !(await confirmBash(command, description))) {
+        const denial = denialMessage("user denied unsandboxed run");
+        return `[blocked by sandbox; ${denial}]\n${result}`;
       }
-      const denial = denialMessage("user denied unsandboxed run");
-      return `[blocked by sandbox; ${denial}]\n${result}`;
+      const [, retry] = await run(shellArgv(command), effectiveTimeout);
+      return `[ran unsandboxed after approval]\n${retry}`;
     }
     return result;
   }
 
-  if (!(await confirmBash(command, description))) {
-    // cancel/timeout swap "User denied" for a neutral message
+  // No sandbox: safe commands still go through confirmBash (auto-allows);
+  // non-safe was already approved above.
+  if (safe && !(await confirmBash(command, description))) {
     return denialMessage("User denied command execution.");
   }
   const [, result] = await run(shellArgv(command), effectiveTimeout);

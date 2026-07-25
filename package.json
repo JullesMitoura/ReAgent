@@ -43,7 +43,8 @@
   "dependencies": {
     "@hono/node-server": "^2.0.11",
     "hono": "^4.12.31",
-    "openai": "^6.49.0"
+    "openai": "^6.49.0",
+    "undici": "^7.28.0"
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"

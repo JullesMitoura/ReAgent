@@ -92,4 +92,22 @@ describe("session", () => {
     expect(fs.existsSync(path.join(dir, "old-1.jsonl"))).toBe(true);
     expect(Session.search("imported")[0]?.id).toBe("old-1");
   });
+
+  it("test_rejects_path_traversal_ids", () => {
+    // A route param decoded to a traversal path (e.g. from `..%2F..%2Fsecret`)
+    // must never resolve outside .reagent/sessions, whether reading, writing
+    // or deleting.
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "reagent-session-victim-"));
+    const victim = path.join(outside, "victim.jsonl");
+    fs.writeFileSync(victim, JSON.stringify({ id: "victim", title: "secret" }) + "\n");
+    const relPath = path.relative(path.join(config.stateDir, "sessions"), victim);
+
+    expect(() => Session.load(relPath)).toThrow();
+    expect(() => Session.load("../../etc/passwd")).toThrow();
+    expect(Session.delete(relPath)).toBe(false);
+    expect(() => Session.fork(relPath)).toThrow();
+    expect(fs.existsSync(victim)).toBe(true); // untouched
+
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
 });

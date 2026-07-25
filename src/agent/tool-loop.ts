@@ -13,6 +13,7 @@ import { reminderMessageForRound } from "../prompts/reminders/inject.js";
 import type { ChatMessage, ToolCall } from "../types.js";
 import { dispatch } from "../tools/index.js";
 import { runToolBatches } from "../tools/orchestration.js";
+import { cancelSignal, currentTurn } from "../turn-context.js";
 
 export interface ToolLoopOptions {
   /** System + user messages (mutated in place). */
@@ -76,11 +77,18 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<string> {
 
   for (let step = 0; step < opts.maxSteps; step++) {
     if (opts.shouldAbort?.()) return "(cancelled: the turn was interrupted)";
-    const resp = (await chat(
-      packMessages(opts.messages, 0),
-      opts.schemas,
-      false,
-    )) as unknown as CompletionResponse;
+    const { signal, dispose } = cancelSignal(currentTurn());
+    let resp: CompletionResponse;
+    try {
+      resp = (await chat(
+        packMessages(opts.messages, 0),
+        opts.schemas,
+        false,
+        signal,
+      )) as unknown as CompletionResponse;
+    } finally {
+      dispose();
+    }
     const msg = resp.choices[0]!.message;
     opts.messages.push(assistantMessage(msg));
     const toolCalls = msg.tool_calls || [];
@@ -140,10 +148,17 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<string> {
   }
 
   opts.messages.push({ role: "user", content: opts.forceSummary });
-  const resp = (await chat(
-    packMessages(opts.messages, 0),
-    null,
-    false,
-  )) as unknown as CompletionResponse;
+  const { signal: finalSignal, dispose: disposeFinal } = cancelSignal(currentTurn());
+  let resp: CompletionResponse;
+  try {
+    resp = (await chat(
+      packMessages(opts.messages, 0),
+      null,
+      false,
+      finalSignal,
+    )) as unknown as CompletionResponse;
+  } finally {
+    disposeFinal();
+  }
   return resp.choices[0]!.message.content || empty;
 }

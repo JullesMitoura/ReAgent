@@ -47,6 +47,7 @@ export function chat(
   messages: ChatMessage[],
   tools: object[] | null = null,
   stream = false,
+  signal?: AbortSignal,
 ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {
   // Observability: only metadata (model and number of messages), never content or key.
   log.debug(
@@ -73,5 +74,5 @@ export function chat(
     params.stream = true;
     params.stream_options = { include_usage: true };
   }
-  return getClient().chat.completions.create(params);
+  return getClient().chat.completions.create(params, signal ? { signal } : undefined);
 }

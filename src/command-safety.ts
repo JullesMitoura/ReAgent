@@ -213,8 +213,9 @@ function isDangerous(command: string, depth: number): boolean {
   try {
     tokens = tokenize(command.trim());
   } catch {
-    // Without reliable tokenization we cannot assert danger.
-    return false;
+    // Fail-closed: unparseable/obfuscated commands must not skip the
+    // dangerous gate (auto-approve / sandbox-first) by looking "unknown".
+    return true;
   }
   return splitSegments(tokens).some((seg) => isDangerousSegment(seg, depth));
 }
@@ -340,6 +341,14 @@ function dangerousGit(args: string[]): boolean {
     );
   }
   if (sub === "push") return rest.some((a) => a === "--force" || a === "-f");
+  // `git checkout -- <path>` discards local modifications to those paths; the
+  // prompt (src/prompts/git-safety.ts) promises this needs confirmation just
+  // like reset --hard/clean -f, so it must be classified the same way.
+  if (sub === "checkout") return rest.includes("--");
+  // `stash pop`/`stash clear` mutate or drop stash entries that may belong to
+  // another worktree/session sharing the same stash stack (git-safety.ts);
+  // applying or clearing the wrong entry silently discards someone else's WIP.
+  if (sub === "stash") return rest[0] === "pop" || rest[0] === "clear";
   return false;
 }
 

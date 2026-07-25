@@ -17,8 +17,8 @@ export const SANDBOX_READONLY_LINE =
   "without approval.";
 
 export const SANDBOX_AUTO_APPROVE_LINE =
-  "- Other commands run without approval prompts; be extra careful with " +
-  "destructive actions.";
+  "- Other commands run without approval prompts (dangerous commands are still blocked unless " +
+  "allow_dangerous / --allow-dangerous is also set); be extra careful with destructive actions.";
 
 export const SANDBOX_APPROVAL_REQUIRED_LINE =
   "- Other actions (bash, write_file, edit_file) require user approval and " +

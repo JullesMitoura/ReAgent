@@ -50,9 +50,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { config } from "../config.js";
+import { scrubbedEnv } from "../lib/env-scrub.js";
 import { getLogger } from "../logs.js";
+import { isProjectTrusted } from "../trust.js";
 
 const log = getLogger("hooks");
+
+// Projects whose untrusted hooks.json was already logged once (avoids a
+// warning spam on every single PreToolUse/PostToolUse call).
+const warnedUntrustedRoots = new Set<string>();
 
 export type HookEvent =
   | "PreToolUse"
@@ -110,6 +116,22 @@ export interface PromptHookResult {
 
 function loadHooksFile(): HooksFile {
   const file = path.join(config.stateDir, "hooks.json");
+  if (!fs.existsSync(file)) return {};
+  // Security gate: an untrusted project's hooks.json must not silently run
+  // shell commands (SessionStart fires the instant `reagent` is pointed at a
+  // directory; PreToolUse fires before every tool call). Same simple posture
+  // as a missing hooks.json: hooks just no-op until the project is trusted.
+  if (!isProjectTrusted(config.root)) {
+    if (!warnedUntrustedRoots.has(config.root)) {
+      warnedUntrustedRoots.add(config.root);
+      log.warning(
+        "'.reagent/hooks.json' found in an untrusted project (%s); hooks will not run " +
+          "until this project is trusted",
+        config.root,
+      );
+    }
+    return {};
+  }
   try {
     const raw = fs.readFileSync(file, "utf8");
     return JSON.parse(raw) as HooksFile;
@@ -165,7 +187,7 @@ function runCommand(
       timeout,
       shell: true,
       input: JSON.stringify(payload),
-      env: { ...process.env, REAGENT_HOOK_EVENT: String(payload.event ?? "") },
+      env: { ...scrubbedEnv(), REAGENT_HOOK_EVENT: String(payload.event ?? "") },
     });
     return {
       ok: (result.status ?? 1) === 0,

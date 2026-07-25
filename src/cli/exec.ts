@@ -17,11 +17,12 @@
 import fs from "node:fs";
 import { parseArgs } from "node:util";
 
-import { Agent } from "../agent.js";
+import { Agent, TurnCancelled } from "../agent.js";
 import { expand } from "../attachments.js";
 import { config } from "../config.js";
 import { classify, userMessage } from "../llm/errors.js";
-import { killActive } from "../tools/shell.js";
+import { killAllToolProcesses } from "../tools/process-registry.js";
+import { claimSignalOwnership } from "../tools/exec-sessions.js";
 import { newTurnContext, runWithTurn } from "../turn-context.js";
 import type { ServerEvent } from "../types.js";
 
@@ -36,6 +37,11 @@ const USAGE =
  * Entry point for exec mode. Returns the exit code (0/1/130); never throws.
  */
 export async function execMain(argv: string[]): Promise<number> {
+  // This entry point manages its own SIGINT-driven turn cancellation below;
+  // tell exec-sessions.ts's fallback signal handler to back off instead of
+  // racing it with an unconditional process.exit() (idempotent alongside
+  // main.ts's own call when invoked via the `reagent exec` subcommand).
+  claimSignalOwnership();
   let values: {
     json?: boolean;
     "output-last-message"?: string;
@@ -101,11 +107,20 @@ export async function execMain(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(ev) + "\n");
   };
 
+  // Same object referenced by the TurnContext below: setting it is what
+  // actually stops the agent loop (via emit throwing TurnCancelled on the
+  // next event), not just the race against `sigint`. Without it the turn kept
+  // running detached after Ctrl+C — more LLM/tool calls, its own session.save()
+  // racing a later invocation — exactly the CLI/REPL gap fixed in repl.ts.
+  const cancel = { set: false };
+  let truncated = false;
   const emit = (ev: ServerEvent): void => {
+    if (cancel.set) throw new TurnCancelled();
     if (ev.type === "token") return; // aggregated: the full text is emitted at the end
+    if (ev.type === "done" && ev.truncated) truncated = true;
     if (asJson) {
       if (ev.type === "done") {
-        outJson({ type: "message", content: ev.content ?? "" });
+        outJson({ type: "message", content: ev.content ?? "", truncated: Boolean(ev.truncated) });
       } else {
         outJson(ev as unknown as Record<string, unknown>);
       }
@@ -123,7 +138,8 @@ export async function execMain(argv: string[]): Promise<number> {
     onSigintReject = reject;
   });
   const onSigint = (): void => {
-    killActive();
+    cancel.set = true;
+    killAllToolProcesses();
     onSigintReject(new KeyboardInterrupt());
   };
   process.on("SIGINT", onSigint);
@@ -131,11 +147,14 @@ export async function execMain(argv: string[]): Promise<number> {
   let final: string;
   try {
     final = await Promise.race([
-      runWithTurn(newTurnContext({ emit }), () => agent.runEvents(expand(prompt), emit)),
+      runWithTurn(newTurnContext({ emit, cancel, sessionPermissions: agent.session }), () =>
+        agent.runEvents(expand(prompt), emit),
+      ),
       sigint,
     ]);
   } catch (e) {
     if (e instanceof KeyboardInterrupt) {
+      if (asJson) outJson({ type: "cancelled" });
       return 130;
     }
     // presentable message + structured classification (kind/status/retryable)
@@ -150,6 +169,9 @@ export async function execMain(argv: string[]): Promise<number> {
 
   if (!asJson) {
     process.stdout.write(final + "\n");
+    if (truncated) {
+      process.stderr.write("warning: stopped at the tool-iteration limit, not a natural completion\n");
+    }
   }
   if (values["output-last-message"]) {
     try {
@@ -159,5 +181,7 @@ export async function execMain(argv: string[]): Promise<number> {
       return 1;
     }
   }
-  return 0;
+  // Distinct from 0 so CI scripts can tell "the agent gave up on the round
+  // budget" apart from "the task actually finished".
+  return truncated ? 3 : 0;
 }

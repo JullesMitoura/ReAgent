@@ -33,8 +33,11 @@ export const IGNORED_DIRS: ReadonlySet<string> = new Set([
 ]);
 
 // Files the agent can never read or write (secrets kept out of the LLM context).
+// Denylist for the FILE tools only (read_file/write_file/edit_file/...); this
+// does NOT restrict the bash tool, which can already read anything the OS user can.
 export const PROTECTED_FILES: ReadonlySet<string> = new Set([
   ".env", ".env.local", ".env.production",
+  ".npmrc", ".netrc", "id_rsa", "id_ed25519", "credentials.json",
 ]);
 
 // Keys accepted in .reagent/config.json; the rest produces a warning with a suggestion.
@@ -50,8 +53,29 @@ export const KNOWN_KEYS: ReadonlySet<string> = new Set([
   "tool_output_prune_minimum", "tool_output_stub_threshold",
   "tool_output_stub_head", "compact_keep_last", "context_window_tokens",
   "situational_git", "plan_mode", "permission_mode", "coordinator", "worktree_agents",
-  "deferred_tools", "workflow",
+  "deferred_tools", "workflow", "verbosity",
 ]);
+
+// --- terminal/UI verbosity (Claude Code style progressive disclosure) --------
+
+/**
+ * How much execution detail the terminal renderer shows.
+ * - quiet: spinner + streamed answer + errors only (no tool/task chatter)
+ * - normal: friendly one-line tool descriptions, task list, final summary
+ * - verbose: normal + a technical line (tool name + summarized args) per call
+ * - debug: raw tool calls/results, full JSON, no summarization
+ */
+export type Verbosity = "quiet" | "normal" | "verbose" | "debug";
+
+export const VERBOSITY_LEVELS: readonly Verbosity[] = ["quiet", "normal", "verbose", "debug"] as const;
+
+export function parseVerbosity(raw: string | undefined | null): Verbosity | null {
+  if (!raw) return null;
+  const v = raw.trim().toLowerCase();
+  if ((VERBOSITY_LEVELS as readonly string[]).includes(v)) return v as Verbosity;
+  if (v === "minimal" || v === "silent" || v === "quiet-mode") return "quiet";
+  return null;
+}
 
 /**
  * Own .env parser (no dependency). Reads <dir>/.env, does not overwrite
@@ -124,6 +148,21 @@ function closestKey(key: string): string | null {
     }
   }
   return best;
+}
+
+/**
+ * True when `root` was explicitly trusted via trust.ts's trustProject().
+ * Intentionally a private duplicate of trust.ts's isProjectTrusted(): config.ts
+ * stays a leaf module ("imports nothing above types.ts", see the header above)
+ * so it cannot import trust.ts, which itself depends on config.ts. Both read
+ * the exact same marker path, so they can never disagree.
+ */
+function isTrustedProjectDir(root: string): boolean {
+  try {
+    return fs.existsSync(path.join(root, ".reagent", "trusted"));
+  } catch {
+    return false;
+  }
 }
 
 function expandUser(p: string): string {
@@ -259,6 +298,10 @@ export class Config {
   enableDeferredTools = false;
   /** Opt-in deterministic multi-agent workflow tool. */
   enableWorkflow = false;
+  /** Terminal rendering detail level; see the Verbosity type. */
+  verbosity: Verbosity = "normal";
+  /** CLI flag sticky: once set (--quiet/--verbose/--debug), a later /cd keeps it. */
+  private forceVerbosity: Verbosity | null = null;
 
   /** @deprecated Prefer permissionMode === "plan". */
   get planMode(): boolean {
@@ -337,7 +380,7 @@ export class Config {
     } catch {
       throw new Error(`directory not found: ${p}`);
     }
-    if (!stat.isDirectory()) throw new Error(`directory not found: ${p}`);
+    if (!stat.isDirectory()) throw new Error(`not a directory: ${p}`);
     const newRoot = fs.realpathSync(path.resolve(expanded));
 
     this.root = newRoot;
@@ -370,7 +413,7 @@ export class Config {
       } catch (e) {
         const { line, col } = jsonErrorLineCol(e instanceof Error ? e.message : "", rawText);
         this.configErrors.push(
-          `config.json invalido (linha ${line}, coluna ${col}): usando defaults`,
+          `config.json invalid (line ${line}, column ${col}): using defaults`,
         );
         parsed = {};
       }
@@ -413,8 +456,8 @@ export class Config {
       );
       if (raw > cap) {
         const msg =
-          `config.json: compact_threshold_tokens ${raw} acima de 90% da ` +
-          `janela de ${this.contextWindowTokens} tokens; clampado para ${cap}`;
+          `config.json: compact_threshold_tokens ${raw} is above 90% of the ` +
+          `${this.contextWindowTokens}-token window; clamped to ${cap}`;
         this.configErrors.push(msg);
         process.stderr.write(msg + "\n");
       }
@@ -424,18 +467,39 @@ export class Config {
     }
 
     // Opt-in OR: sticky OR env=="1" OR config.
-    this.autoApprove =
-      this.forceAutoApprove ||
-      (process.env.AGENT_AUTO_APPROVE ?? "0") === "1" ||
-      this.getBool(fileCfg, "auto_approve", false);
+    const envAutoApprove = (process.env.AGENT_AUTO_APPROVE ?? "0") === "1";
+    const fileAutoApprove = this.getBool(fileCfg, "auto_approve", false);
+    this.autoApprove = this.forceAutoApprove || envAutoApprove || fileAutoApprove;
     if (this.forceAutoApprove) {
       this.permissionMode = "bypass";
     }
+    // Security gate: a project-committed config.json alone must not be able to
+    // flip auto-approve on with zero user action. Only downgrade when the FILE
+    // was the sole source (not the sticky --yolo flag, not the env var: those
+    // are the user's own explicit ask and must keep working unchanged).
+    if (fileAutoApprove && !this.forceAutoApprove && !envAutoApprove && !isTrustedProjectDir(this.root)) {
+      this.autoApprove = false;
+      this.configErrors.push(
+        "config.json: 'auto_approve' is true, but this project is not trusted; run reagent " +
+          "in this directory interactively once to review and trust it, or pass --yolo yourself.",
+      );
+    }
 
-    this.allowDangerous =
-      this.forceAllowDangerous ||
-      (process.env.AGENT_ALLOW_DANGEROUS ?? "0") === "1" ||
-      this.getBool(fileCfg, "allow_dangerous", false);
+    const envAllowDangerous = (process.env.AGENT_ALLOW_DANGEROUS ?? "0") === "1";
+    const fileAllowDangerous = this.getBool(fileCfg, "allow_dangerous", false);
+    this.allowDangerous = this.forceAllowDangerous || envAllowDangerous || fileAllowDangerous;
+    if (
+      fileAllowDangerous &&
+      !this.forceAllowDangerous &&
+      !envAllowDangerous &&
+      !isTrustedProjectDir(this.root)
+    ) {
+      this.allowDangerous = false;
+      this.configErrors.push(
+        "config.json: 'allow_dangerous' is true, but this project is not trusted; run reagent " +
+          "in this directory interactively once to review and trust it, or pass --allow-dangerous yourself.",
+      );
+    }
 
     this.enableWebfetch =
       (process.env.AGENT_ENABLE_WEBFETCH ?? "0") === "1" ||
@@ -543,6 +607,13 @@ export class Config {
       (process.env.AGENT_ENABLE_WORKFLOW ?? "") === "1" ||
       this.getBool(fileCfg, "workflow", false);
 
+    // verbosity: sticky CLI flag wins; else env; else file; else "normal"
+    const envVerbosity = parseVerbosity(process.env.AGENT_VERBOSITY);
+    const fileVerbosity = parseVerbosity(
+      typeof fileCfg["verbosity"] === "string" ? String(fileCfg["verbosity"]) : "",
+    );
+    this.verbosity = this.forceVerbosity ?? envVerbosity ?? fileVerbosity ?? "normal";
+
     // permission_mode: sticky CLI wins; else env; else file; else keep current sticky
     const envMode = parsePermissionMode(process.env.AGENT_PERMISSION_MODE ?? "");
     const fileMode = parsePermissionMode(
@@ -551,8 +622,15 @@ export class Config {
     if (envMode) {
       this.setPermissionMode(envMode);
     } else if (fileMode && !this.forceAutoApprove) {
-      // Don't clobber bypass set via --yolo earlier in the same process unless file says bypass
-      if (this.permissionMode === "default" || this.permissionMode === "plan") {
+      // Security gate: config.json alone must not be able to flip the project
+      // into bypass (full auto-approve) mode without the user ever trusting it.
+      if (fileMode === "bypass" && !isTrustedProjectDir(this.root)) {
+        this.configErrors.push(
+          "config.json: 'permission_mode' requests 'bypass', but this project is not trusted; " +
+            "run reagent in this directory interactively once to review and trust it, or pass --yolo yourself.",
+        );
+      } else if (this.permissionMode === "default" || this.permissionMode === "plan") {
+        // Don't clobber bypass set via --yolo earlier in the same process unless file says bypass
         this.permissionMode = fileMode;
       }
     } else if (this.getBool(fileCfg, "plan_mode", false) && this.permissionMode === "default") {
@@ -599,6 +677,12 @@ export class Config {
 
   setSpawnMode(mode: "proactive" | "explicit"): void {
     this.spawnMode = mode;
+  }
+
+  /** Sets the terminal verbosity stickily for this process (a later /cd keeps it). */
+  setVerbosity(v: Verbosity): void {
+    this.forceVerbosity = v;
+    this.verbosity = v;
   }
 
   /** True if the path is inside ReAgent's own source code. */

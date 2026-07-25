@@ -57,19 +57,24 @@ function sessionsDir(): string {
 
 // --- retention -------------------------------------------------------------
 
-const sweptDirs = new Set<string>();
+const lastSweptAt = new Map<string, number>();
+/** Re-check retention at most this often per dir, so a long-running `serve`
+ * process doesn't accumulate persisted sessions forever after its first sweep. */
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
-/** Removes persisted sessions older than RETENTION_MS (once per dir). */
+/** Removes persisted sessions older than RETENTION_MS (at most once per SWEEP_INTERVAL_MS per dir). */
 function sweepOldSessions(dir: string): void {
-  if (sweptDirs.has(dir)) return;
-  sweptDirs.add(dir);
+  const now = Date.now();
+  const last = lastSweptAt.get(dir);
+  if (last !== undefined && now - last < SWEEP_INTERVAL_MS) return;
+  lastSweptAt.set(dir, now);
   let files: string[];
   try {
     files = fs.readdirSync(dir);
   } catch {
     return;
   }
-  const cutoff = Date.now() - RETENTION_MS;
+  const cutoff = now - RETENTION_MS;
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     const full = path.join(dir, file);

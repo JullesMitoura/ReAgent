@@ -2,9 +2,11 @@
  * Port of src/sandbox.py: an OS sandbox for bash on macOS (Seatbelt, Codex's
  * workspace-write model).
  *
- * Non-dangerous commands run inside /usr/bin/sandbox-exec without asking for
- * permission: read of the whole disk, write only in the project ROOT and in the
- * temporaries. Escaping the sandbox requires explicit approval (tools/shell.ts).
+ * Known-safe (read-only) commands may run inside /usr/bin/sandbox-exec without
+ * asking; non-safe commands always prompt first (tools/shell.ts). Write is
+ * limited to the project ROOT and temporaries. Broad host reads remain for
+ * tooling compatibility, with explicit denials for common secret locations
+ * outside the workspace (.ssh, .aws, home .npmrc, …).
  */
 
 import fs from "node:fs";
@@ -55,13 +57,15 @@ export function regexQuote(s: string): string {
 export function buildProfile(): string {
   const root = realpathSafe(String(config.root));
   const tmpdir = realpathSafe(os.tmpdir());
+  const home = realpathSafe(os.homedir());
   const lines = [
     "(version 1)",
     "(deny default)",
     "(allow process-exec)",
     "(allow process-fork)",
     "(allow signal (target same-sandbox))",
-    // Read of the whole disk, like Codex's workspace-write.
+    // Read of the whole disk, like Codex's workspace-write (tooling needs
+    // /usr, SDKs, etc.). Sensitive home paths are denied below.
     "(allow file-read*)",
     `(allow file-write* (subpath ${quote(root)}))`,
     '(allow file-write* (subpath "/tmp"))',
@@ -74,6 +78,14 @@ export function buildProfile(): string {
     `(deny file-write* (subpath ${quote(path.join(root, ".reagent"))}))`,
     `(deny file-read* (subpath ${quote(path.join(root, ".reagent"))}))`,
   ];
+  // Host secret locations outside the project (defense in depth on top of
+  // the non-safe permission gate in tools/shell.ts).
+  for (const rel of [".ssh", ".aws", ".gnupg", ".config/gcloud", ".azure"]) {
+    lines.push(`(deny file-read* (subpath ${quote(path.join(home, rel))}))`);
+  }
+  for (const name of [".npmrc", ".netrc", ".pgpass"]) {
+    lines.push(`(deny file-read* (literal ${quote(path.join(home, name))}))`);
+  }
   // Secrets: deny read and write of the PROTECTED_FILES in the ROOT and in any
   // subdirectory (same rationale as the carveouts: deny after the allows).
   for (const name of Array.from(PROTECTED_FILES).sort()) {

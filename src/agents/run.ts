@@ -30,6 +30,30 @@ export type { RunAgentOptions } from "./types.js";
 
 const log = getLogger("agents.run");
 
+// Bounds how many `agent(background=true)` calls actually execute at once.
+// Without this, background dispatch fires an un-awaited async IIFE per call
+// (see runAgent below) and every requested background agent starts
+// immediately regardless of config.maxAgentConcurrency — the cap that
+// parallel.ts/workflow.ts already respect for their own fan-out. Re-checks
+// the limit live on each wake-up so a config change mid-run takes effect.
+let activeBackgroundAgents = 0;
+const backgroundWaiters: Array<() => void> = [];
+
+async function acquireBackgroundSlot(): Promise<() => void> {
+  while (activeBackgroundAgents >= Math.max(1, config.maxAgentConcurrency)) {
+    await new Promise<void>((resolve) => backgroundWaiters.push(resolve));
+  }
+  activeBackgroundAgents += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeBackgroundAgents -= 1;
+    const wake = backgroundWaiters.shift();
+    if (wake) wake();
+  };
+}
+
 export function allAgents(): AgentDefinition[] {
   const map = new Map<string, AgentDefinition>();
   for (const a of builtinAgents()) map.set(a.agentType, a);
@@ -287,6 +311,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<string> {
           enqueueBgNotification(text);
         }
       };
+      const release = await acquireBackgroundSlot();
       try {
         const report = await (parentCtx
           ? runWithTurn(parentCtx, () =>
@@ -326,6 +351,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<string> {
             summary: `Background agent '${title}' failed: ${err}`,
           }),
         );
+      } finally {
+        release();
       }
     })();
     return (

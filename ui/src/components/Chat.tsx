@@ -27,14 +27,6 @@ interface Props {
   configErrors?: string[];
 }
 
-// Sugestões do estado inicial: preenchem o input e ensinam o que o agente faz.
-const SUGGESTIONS = [
-  "Explain this codebase",
-  "Find and fix a bug",
-  "Write tests for a file",
-  "Review my recent changes",
-];
-
 /* token @caminho sendo digitado no fim do texto */
 const AT_TOKEN_RE = /(?<!\w)@([^\s@]*)$/;
 const ATTACHMENT_RE = /(?<!\w)@([^\s@]+)/g;
@@ -381,19 +373,6 @@ export function Chat({
               {!live && (
                 <p className="mt-2 text-sm text-zinc-500">demo with a simulated agent</p>
               )}
-            </div>
-            <div className="flex max-w-lg flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => send(s)}
-                  disabled={busy}
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-[13px] text-zinc-400 transition-colors hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/40 disabled:opacity-40"
-                >
-                  {s}
-                </button>
-              ))}
             </div>
           </div>
         ) : (

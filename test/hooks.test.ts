@@ -29,6 +29,7 @@ import {
 import { runAgent } from "../src/agents/run.js";
 import { clearAgentSessions } from "../src/agents/sessions.js";
 import "../src/agents/index.js";
+import { isProjectTrusted, trustProject } from "../src/trust.js";
 
 const originalRoot = config.root;
 const originalEnableSubagent = config.enableSubagent;
@@ -48,6 +49,12 @@ beforeEach(() => {
   config.autoApprove = true;
   config.contextFile = false;
   clearAgentSessions();
+  // These tests deliberately write their own hooks.json and expect it to run,
+  // same as a developer's own local project they already reviewed: trust it
+  // up front so the security gate (untrusted hooks.json no-ops, see the
+  // "hooks: untrusted project" describe block below) doesn't change their
+  // meaning.
+  trustProject(project);
 });
 
 afterEach(() => {
@@ -251,5 +258,73 @@ describe("hooks: new events", () => {
       agentType: "explore",
       report: "explored: nothing found",
     });
+  });
+});
+
+describe("hooks: untrusted project (security gate)", () => {
+  // This project is intentionally NOT trusted (the beforeEach above already
+  // called trustProject(project); undo that here to test the untrusted path).
+  beforeEach(() => {
+    fs.rmSync(path.join(config.stateDir, "trusted"), { force: true });
+  });
+
+  it("a hooks.json in an untrusted project never runs: PreToolUse stays 'allow'", () => {
+    expect(isProjectTrusted(project)).toBe(false);
+    writeHooks({ PreToolUse: [{ type: "command", command: "exit 1" }] });
+    // Without the trust gate this would deny (see the "legacy flat format"
+    // test above, same hooks.json, same command, only trust differs).
+    expect(runPreToolUse("bash", "{}").decision).toBe("allow");
+  });
+
+  it("hooksConfigured() reports false for an untrusted project's hooks.json", () => {
+    writeHooks({ PostToolUse: [{ matcher: "bash", hooks: [{ type: "command", command: "true" }] }] });
+    expect(hooksConfigured()).toBe(false);
+  });
+
+  it("SessionStart/Stop/PostToolUseFailure hooks also no-op while untrusted", () => {
+    const logFile = path.join(project, "should-not-exist.log");
+    const record = { type: "command" as const, command: `echo hit >> "${logFile}"` };
+    writeHooks({
+      SessionStart: [record],
+      Stop: [{ type: "command", command: `echo '{"decision":"block","reason":"nope"}'` }],
+    });
+    runSessionStartHooks("startup");
+    expect(runStopHooks("final answer")).toEqual({ block: false });
+    expect(fs.existsSync(logFile)).toBe(false);
+  });
+
+  it("trusting the project makes the SAME hooks.json start running again", () => {
+    writeHooks({ PreToolUse: [{ type: "command", command: "exit 1" }] });
+    expect(runPreToolUse("bash", "{}").decision).toBe("allow"); // untrusted: no-op
+    trustProject(project);
+    expect(runPreToolUse("bash", "{}").decision).toBe("deny"); // trusted: runs for real
+  });
+});
+
+describe("hooks: subprocess env is scrubbed (no API keys leak into hook commands)", () => {
+  const secretVar = "AZURE_OPENAI_KEY"; // exact key env-scrub.ts always removes
+  const savedSecret = process.env[secretVar];
+
+  beforeEach(() => {
+    process.env[secretVar] = "super-secret-value";
+  });
+
+  afterEach(() => {
+    if (savedSecret === undefined) delete process.env[secretVar];
+    else process.env[secretVar] = savedSecret;
+  });
+
+  it("a PreToolUse hook cannot see AZURE_OPENAI_KEY from the parent process", () => {
+    writeHooks({
+      PreToolUse: [
+        {
+          type: "command",
+          command: `if [ -n "$${secretVar}" ]; then echo '{"decision":"deny","reason":"leaked"}'; fi`,
+        },
+      ],
+    });
+    // If runCommand() ever regresses to `env: { ...process.env, ... }`, the
+    // hook sees the secret and denies with "leaked".
+    expect(runPreToolUse("bash", "{}").decision).toBe("allow");
   });
 });

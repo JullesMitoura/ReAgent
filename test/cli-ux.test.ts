@@ -7,21 +7,32 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makePromptSession, promptHistory } from "../src/cli/repl.js";
+import { config } from "../src/config.js";
+import {
+  completeLine,
+  longestCommonPrefix,
+  makePromptSession,
+  promptHistory,
+} from "../src/cli/repl.js";
 
 let savedHome: string | undefined;
 let tmpHome: string;
+const originalRoot = config.root;
+let project: string;
 
 beforeEach(() => {
   savedHome = process.env.HOME;
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "reagent-home-"));
   process.env.HOME = tmpHome;
+  project = config.setRoot(fs.mkdtempSync(path.join(os.tmpdir(), "reagent-cli-ux-")));
 });
 
 afterEach(() => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
   fs.rmSync(tmpHome, { recursive: true, force: true });
+  config.setRoot(originalRoot);
+  fs.rmSync(project, { recursive: true, force: true });
 });
 
 describe("cli-ux", () => {
@@ -38,5 +49,37 @@ describe("cli-ux", () => {
     expect(hist).toBeDefined();
     expect(typeof hist.persistent).toBe("boolean");
     expect(Array.isArray(hist.load())).toBe(true);
+  });
+
+  it("test_completer_offers_every_real_command_not_just_the_original_subset", () => {
+    // These are real, documented, working commands (slash-commands.ts
+    // handleCommand) that used to be missing from the Tab-completion list.
+    for (const cmd of ["/doctor", "/mode", "/plan", "/coordinator", "/spawn"]) {
+      const [hits] = completeLine(cmd);
+      expect(hits, `${cmd} should be offered by completeLine`).toContain(cmd);
+    }
+  });
+
+  it("test_completer_lists_at_file_candidates_under_prefix", () => {
+    fs.mkdirSync(path.join(project, "src", "cli"), { recursive: true });
+    fs.writeFileSync(path.join(project, "src", "cli", "main.ts"), "export {}\n");
+    fs.writeFileSync(path.join(project, "README.md"), "# hi\n");
+
+    const [rootHits] = completeLine("@");
+    expect(rootHits).toContain("@src/");
+    expect(rootHits).toContain("@README.md");
+
+    const [srcHits, srcSub] = completeLine("@src/");
+    expect(srcSub).toBe("@src/");
+    expect(srcHits).toContain("@src/cli/");
+
+    const [fileHits] = completeLine("@src/cli/ma");
+    expect(fileHits).toEqual(["@src/cli/main.ts"]);
+  });
+
+  it("test_longest_common_prefix", () => {
+    expect(longestCommonPrefix(["@src/a", "@src/b"])).toBe("@src/");
+    expect(longestCommonPrefix(["@src/", "@src/"])).toBe("@src/");
+    expect(longestCommonPrefix([])).toBe("");
   });
 });

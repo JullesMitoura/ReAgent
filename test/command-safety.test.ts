@@ -64,6 +64,11 @@ const DANGEROUS_COMMANDS = [
   "/bin/rm -rf x",
   "/usr/bin/env rm -rf x",
   "./rm -rf x",
+  // git-safety.ts promises these need confirmation just like reset --hard.
+  "git checkout -- .",
+  "git checkout -- file.txt",
+  "git stash pop",
+  "git stash clear",
 ];
 
 const NOT_DANGEROUS_COMMANDS = [
@@ -76,6 +81,11 @@ const NOT_DANGEROUS_COMMANDS = [
   "git clean",
   "ls -la",
   "truncate -s 100 file.bin",
+  // Branch switches/creation and non-destructive stash use stay unflagged.
+  "git checkout main",
+  "git checkout -b feature",
+  "git stash apply",
+  "git stash list",
 ];
 
 describe("command_safety", () => {
@@ -109,5 +119,9 @@ describe("command_safety", () => {
         expect(isDangerousCommand(cmd)).toBe(false);
       });
     }
+  });
+
+  it("treats unparseable commands as dangerous (fail-closed)", () => {
+    expect(isDangerousCommand("echo 'aspas desbalanceadas")).toBe(true);
   });
 });

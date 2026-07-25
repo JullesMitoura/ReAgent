@@ -31,6 +31,7 @@ import {
   runPostToolUseFailureHooks,
   runPreToolUse,
 } from "../hooks/runner.js";
+import { getLogger } from "../logs.js";
 import { confirmHookAsk } from "../permissions.js";
 import { BARE_MODE_TOOLS, COORDINATOR_MODE_TOOLS, modeAllowsTool, PLAN_MODE_TOOLS } from "../modes.js";
 import { builtinAgents } from "../agents/builtin.js";
@@ -58,6 +59,14 @@ import { globFiles, grep } from "./search.js";
 import { bash } from "./shell.js";
 import { todoRead, todoWrite } from "./todo.js";
 import { webfetch } from "./web.js";
+
+// Traceability for successful tool outputs: query.ts already logs the tool
+// name + redacted args on every call and the first 200 chars of FAILED
+// results, but nothing about successful output, making post-hoc debugging
+// from the log file alone impossible. Deliberately minimal: name + output
+// LENGTH only, never the content itself (arbitrary file content can hold
+// secrets the redact() pass does not catch).
+const log = getLogger("tools");
 
 function agentTypesDescription(): string {
   const map = new Map<string, { agentType: string; whenToUse: string }>();
@@ -978,6 +987,7 @@ export async function dispatch(name: string, argumentsJson: string): Promise<str
   if (output.startsWith("Error:") || output.startsWith("Argument error:")) {
     return failed(output);
   }
+  log.info("tool result: %s -> %d chars", name, output.length);
   try {
     const post = runPostToolUse(name, argumentsJson, output);
     return withHookContext(output, pre.additionalContext, post.additionalContext);
@@ -1005,7 +1015,16 @@ function withHookContext(
  * caller appends the tool messages in the original order.
  */
 export async function dispatchParallel(toolCalls: ToolCall[]): Promise<Record<string, string>> {
-  const results = await mapLimit(toolCalls, config.maxToolConcurrency, (tc) =>
+  // The model's own multi-agent fan-out pattern (several "agent" calls in one
+  // round, explicitly encouraged by that tool's description) lands here, not
+  // in parallel.ts/workflow.ts, so it must also respect maxAgentConcurrency:
+  // otherwise a batch of "agent" calls bypasses that cap via the (usually
+  // larger) maxToolConcurrency instead.
+  const hasAgentCalls = toolCalls.some((tc) => tc.function.name === "agent");
+  const limit = hasAgentCalls
+    ? Math.min(config.maxToolConcurrency, config.maxAgentConcurrency)
+    : config.maxToolConcurrency;
+  const results = await mapLimit(toolCalls, limit, (tc) =>
     dispatch(tc.function.name, tc.function.arguments),
   );
   const out: Record<string, string> = {};

@@ -1,0 +1,22 @@
+# Local development / demo compose for ReAgent.
+# Usage: docker compose up --build
+# Mount the host project at /workspace; pass Azure credentials via .env.
+
+services:
+  reagent:
+    build: .
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    # Override CMD for an interactive REPL instead of the web UI
+    # (use `docker compose run -it` instead of `up` for a real TTY):
+    # command: []
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp

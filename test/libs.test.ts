@@ -110,6 +110,18 @@ describe("env-scrub", () => {
     const env = scrubbedEnv();
     expect(env["my_password"]).toBeUndefined();
   });
+
+  it("scrubs DATABASE_URL and AUTH-style names but keeps SSH_AUTH_SOCK", () => {
+    setEnv("DATABASE_URL", "postgres://user:pass@localhost/db");
+    setEnv("MY_AUTH_HEADER", "Bearer xyz");
+    setEnv("CONNECTION_STRING", "Server=.;Password=x");
+    setEnv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock");
+    const env = scrubbedEnv();
+    expect(env["DATABASE_URL"]).toBeUndefined();
+    expect(env["MY_AUTH_HEADER"]).toBeUndefined();
+    expect(env["CONNECTION_STRING"]).toBeUndefined();
+    expect(env["SSH_AUTH_SOCK"]).toBe("/tmp/ssh-agent.sock");
+  });
 });
 
 describe("doom-loop", () => {

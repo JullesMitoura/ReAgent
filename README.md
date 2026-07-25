@@ -39,12 +39,14 @@ reagent                      # interactive REPL (the CLI)
 reagent serve                # web UI: starts the server and opens the browser
 reagent serve --port 9000    # web UI on another port
 reagent serve --no-open      # start the server without opening the browser
+reagent serve --host 0.0.0.0 # bind to all interfaces (containers)
 reagent -p "do X"            # single non-interactive prompt
 reagent -p "do X" --json     # NDJSON events on stdout (CI/scripts)
 reagent --plan               # shorthand for --mode plan
 reagent --mode acceptEdits   # default|plan|acceptEdits|bypass|bare
 reagent --coordinator        # lead orchestrates via sub-agents
 reagent exec "do X"          # non-interactive runner (JSON/scripts)
+reagent exec "do X" --output-last-message out.txt   # also write just the final message to a file
 reagent --dir <path>         # act on another project
 reagent --continue           # resume the most recent session
 reagent --sessions           # list saved sessions
@@ -52,10 +54,10 @@ reagent --yolo               # skip permission confirmations (mode=bypass)
 ```
 
 A single command runs the CLI (`reagent`); a single command opens the web UI already
-talking to the backend (`reagent serve`). Before `npm run build`, invoke the same
-entry point with `node bin/reagent.js ...`.
+talking to the backend (`reagent serve`). `bin/reagent.js` only imports the compiled
+`dist/` output, so it requires `npm run build` first.
 
-During development you can run without building:
+During development, before building, use `npm run dev` instead:
 
 ```bash
 npm run dev -- --help          # same as: reagent --help
@@ -66,12 +68,20 @@ The `.env` is loaded from the current working directory (same semantics as the P
 `load_dotenv()`), so run `reagent` from inside the project that holds your `.env`.
 
 REPL commands: `/help`, `/new`, `/cd <path>`, `/sessions`, `/resume <n|id>`,
+`/fork` (duplicate the current session and switch to the copy),
 `/search <text>` (full-text history search), `/undo`, `/init`, `/compact`, `/todos`,
 `/usage`, `/tools`, `/doctor`, `/mode [name]`, `/plan [on|off]`, `/coordinator [on|off]`,
-`/context`, `/exit`. Attach files with `@path/to/file`.
+`/spawn [proactive|explicit]` (sub-agent spawn policy),
+`/verbosity [quiet|normal|verbose|debug]`, `/context`, `/exit`.
+Attach files with `@path/to/file`.
 
 **Permission modes:** `default` (ask), `plan` (read-only tools), `acceptEdits` (auto-approve
 file mutations; still ask for bash), `bypass` (no prompts), `bare` (minimal tool surface).
+
+Permission prompts offer **Allow once**, **Allow for session** (until the process
+exits; not written to disk), **Always allow** (persisted in `.reagent/permissions.json`),
+and **Deny**. Known-safe read-only commands run without any prompt on any OS; on
+macOS they additionally run inside a Seatbelt sandbox. Other commands always ask first.
 
 ### Custom commands
 
@@ -88,14 +98,19 @@ up in `/help`. Built-in commands take precedence.
 | `read_file`, `list_dir`, `glob`, `grep` | read and search the project | free |
 | `write_file`, `edit_file` | create/edit (with automatic diagnostics on .py/.js) | asks approval |
 | `multi_edit` | several edits to the SAME file in one atomic call | asks approval |
+| `apply_patch` | applies a unified diff patch to a file | asks approval |
 | `delete_file` | removes a file from the project | asks approval |
 | `bash` | shell commands, sandbox-first on macOS | asks approval |
+| `exec_command`, `write_stdin` | persistent shell sessions across turns | asks approval; gated by `exec_sessions` |
+| `task_output`, `task_stop` | manage background bash tasks | free |
 | `todowrite`, `todoread` | the agent's task list (multi-step) | free |
 | `question` | asks the user something mid-work | interactive |
+| `exit_plan_mode` | submits a plan for approval | interactive |
 | `remember` | appends a fact to the global user profile | free |
 | `webfetch` | fetches URL content | **off by default** |
 | `explore`, `plan`, `agent`, `parallel_agents` | delegate to typed sub-agents | **explore/plan/agent on by default**; parallel on by default |
 | `skill` | load a SKILL.md playbook on demand | free |
+| `workflow`, `tool_search`, `structured_output`, `send_message`, `list_agents` | opt-in orchestration tools | **off by default**, gated by `deferred_tools`/`workflow` |
 
 `edit_file` locates the target through a cascade of strategies (exact match, trailing
 whitespace, indentation, literal escapes, block anchor with similarity), so fewer edits
@@ -134,14 +149,17 @@ interactive question modal, turn stop button, task panel, search and history del
 ## Security
 
 - **Directory sandbox**: file tools operate only inside the working directory.
-- **Protected secrets**: `.env`, `.env.local` and `.env.production` are blocked for file
-  tools, and `bash` runs with a scrubbed environment (KEY/SECRET/TOKEN/PASSWORD and
-  `AZURE_OPENAI_*` variables removed).
+- **Protected secrets**: `.env`, `.env.local`, `.env.production`, `.npmrc`, `.netrc`, SSH
+  private keys (`id_rsa`, `id_ed25519`) and `credentials.json` are blocked for file tools,
+  and `bash`/exec sessions run with a scrubbed environment (any variable whose name
+  contains KEY/SECRET/TOKEN/PASSWORD/CREDENTIAL/APIKEY/PRIVATE or an `AUTH` segment,
+  plus `AZURE_OPENAI_*`, `DATABASE_URL` and `CONNECTION_STRING`, removed).
 - **Protected state**: `.reagent/` is out of reach of file tools.
 - **App source protection**: ReAgent's own source is read-only for the agent.
-- **bash with approval**: shell commands ask for approval; a saved rule only covers the
-  exact prefix and never authorizes a compound command (shell metacharacters force a new
-  confirmation). On macOS, non-dangerous commands run first inside a Seatbelt sandbox.
+- **bash with approval**: known-safe read-only commands run without any prompt (any OS);
+  other commands ask for approval, and a saved rule only covers the exact prefix and never
+  authorizes a compound command (shell metacharacters force a new confirmation). On macOS,
+  non-dangerous commands additionally run inside a Seatbelt sandbox.
 - **Network**: the only egress is your Azure endpoint. `webfetch` is opt-in and, when on,
   blocks internal targets (loopback, private ranges, link-local, cloud metadata) against
   SSRF, revalidating each redirect.
@@ -159,7 +177,14 @@ Optional config in `.reagent/config.json` (per project, re-read on `/cd`): `max_
 `webfetch`, `subagent`, `parallel_agents`, `sandbox_mode`, `sandbox_network`,
 `exec_sessions`, `pack_context`, `protect_app_source`, `llm_timeout_seconds`,
 `permission_timeout_seconds`, `max_completion_tokens`, `context_file`, and the
-`tool_output_*` context-packing knobs. See `docs/CONTRACTS.md` for defaults and precedence.
+`tool_output_*` context-packing knobs. Autonomy/orchestration knobs: `permission_mode`
+(default|plan|acceptEdits|bypass|bare), `plan_mode` (boot straight into plan mode),
+`situational_git` (capped git status in the prompt, on by default), `coordinator`
+(lead orchestrates via sub-agents), `worktree_agents` (parallel workers may use git
+worktrees), `deferred_tools` (hide niche tools until unlocked via `tool_search`),
+`workflow` (opt-in deterministic pipeline/parallel multi-agent tool),
+`max_agent_concurrency` (sub-agents running at once) and `max_tool_concurrency`
+(concurrency-safe tools dispatched at once). See `docs/CONTRACTS.md` for defaults and precedence.
 
 ## Development
 
@@ -168,6 +193,18 @@ npm test               # vitest suite (tools, permissions, sessions, sanitize, u
 npm run typecheck      # tsc --noEmit
 npm run build          # compile to dist/
 ```
+
+## Docker
+
+```bash
+docker build -t reagent .
+docker run --rm -it -v "$PWD:/workspace" -w /workspace --env-file .env -p 8787:8787 reagent
+# or: docker compose up --build
+```
+
+The image runs as a non-root user, binds `0.0.0.0:8787` inside the container
+(`REAGENT_BIND_HOST`), and exposes `/api/health` for health checks. Local
+`reagent serve` still defaults to `127.0.0.1` only.
 
 ## Switching LLM
 
@@ -184,7 +221,7 @@ reagent/
 │   ├── server/         # HTTP API: SSE, permissions, stop, delete, search (Hono)
 │   ├── protocol/       # Op/Event façade (CLI and server → core)
 │   ├── agent/          # QueryEngine, stream, compact, shared tool-loop
-│   ├── agents/         # Typed sub-agents (explore, plan, worker, coordinator-worker, disk)
+│   ├── agents/         # Typed sub-agents (explore, plan, verification, worker, general-purpose, coordinator-worker, disk)
 │   ├── modes.ts        # permission modes (plan / acceptEdits / bypass / bare)
 │   ├── tools/          # registry, orchestration, StreamingToolExecutor
 │   ├── prompts/        # modular prompt assets (core / tools / agents / reminders)

@@ -18,6 +18,7 @@ import { Session } from "../session.js";
 import { buildSystemPrompt } from "../system-prompt.js";
 import { runPreCompactHooks, runSessionStartHooks } from "../hooks/runner.js";
 import { headTail } from "../tools/index.js";
+import { cancelSignal, currentTurn } from "../turn-context.js";
 import type { ChatMessage, EmitFn } from "../types.js";
 
 import { recentReads } from "./read-state.js";
@@ -235,8 +236,9 @@ export async function compactSession(session: Session, _emit?: EmitFn | null): P
       ...head,
       { role: "user", content: SUMMARY_TEMPLATE },
     ];
+    const { signal, dispose } = cancelSignal(currentTurn());
     try {
-      response = (await chat(request)) as unknown as {
+      response = (await chat(request, null, false, signal)) as unknown as {
         choices?: { message?: { content?: string | null } }[];
       };
       break;
@@ -259,6 +261,8 @@ export async function compactSession(session: Session, _emit?: EmitFn | null): P
       hardTruncate(session);
       hardTruncated = true;
       break;
+    } finally {
+      dispose();
     }
   }
   if (hardTruncated) return;

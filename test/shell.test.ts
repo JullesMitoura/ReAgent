@@ -298,6 +298,21 @@ describe("shell", () => {
     for (const log of logs) fs.rmSync(log, { force: true });
   });
 
+  it("test_invalid_timeout_type_returns_controlled_error", async () => {
+    // regression: Math.min("abc", 600) === NaN, and setTimeout(fn, NaN) fires
+    // almost immediately, so this used to return a bogus "Command timed out
+    // after NaNs" instead of a controlled error
+    _allow();
+    spawnMock.mockImplementation((() => {
+      throw new Error("spawn should not be called for an invalid timeout");
+    }) as never);
+    const result = await bash("sleep 3 && echo done", "abc" as unknown as number);
+    expect(result).toContain("Error:");
+    expect(result).toContain("timeout");
+    expect(result).not.toContain("NaN");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it("test_run_in_background_denied_never_spawns", async () => {
     vi.mocked(confirmBash).mockResolvedValue(false);
     spawnMock.mockImplementation((() => {

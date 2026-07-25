@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { config } from "../src/config.js";
+import { ArgumentError } from "../src/tools/errors.js";
 import { globFiles, grep } from "../src/tools/search.js";
 
 const originalRoot = config.root;
@@ -62,5 +63,14 @@ describe("search sandbox", () => {
     fs.symlinkSync(real, path.join(project, "alias.txt"));
     const out = globFiles("*.txt");
     expect(out).toContain("alias.txt");
+  });
+
+  it("test_grep_rejects_non_string_pattern", () => {
+    // regression: new RegExp(pattern) silently coerces a non-string via
+    // .toString() (an object becomes the literal "[object Object]"),
+    // compiling a nonsense regex that matches the wrong things instead of
+    // erroring
+    fs.writeFileSync(path.join(project, "obj.txt"), "[object Object]\n");
+    expect(() => grep({ nested: "x" } as unknown as string)).toThrow(ArgumentError);
   });
 });

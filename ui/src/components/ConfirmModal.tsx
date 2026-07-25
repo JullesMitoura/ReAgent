@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface Props {
   title: string;
@@ -9,20 +10,27 @@ interface Props {
 }
 
 export function ConfirmModal({ title, description, confirmLabel, onConfirm, onCancel }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Focus trap: keeps Tab/Shift+Tab cycling inside the dialog and restores
+  // focus to whatever was focused before it opened; Escape cancels.
+  const { handleKeyDown } = useFocusTrap(dialogRef, { onEscape: onCancel });
 
   useEffect(() => {
     cancelRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-5">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onKeyDown={handleKeyDown}
+        className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-5"
+      >
         <h2 id="confirm-title" className="text-base font-medium text-zinc-100">{title}</h2>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">{description}</p>
         <div className="mt-5 flex justify-end gap-2">

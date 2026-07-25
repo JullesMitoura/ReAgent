@@ -17,6 +17,8 @@ import { listSkillCatalog } from "../skills/load.js";
 import * as userProfile from "../user-profile.js";
 
 import {
+  APP_SOURCE_PROTECTED_LINE,
+  APP_SOURCE_UNPROTECTED_LINE,
   BEST_PRACTICE_RULES,
   CONTEXT_LABEL,
   EXEC_SESSIONS_RULE,
@@ -65,6 +67,7 @@ function sandboxRules(): string {
 function rulesBlock(): string {
   return [
     RULES_HEAD,
+    config.protectAppSource ? APP_SOURCE_PROTECTED_LINE : APP_SOURCE_UNPROTECTED_LINE,
     config.enableParallel ? PARALLEL_RULE : "",
     config.enableExecSessions ? EXEC_SESSIONS_RULE : "",
     modePromptRule(config.permissionMode),

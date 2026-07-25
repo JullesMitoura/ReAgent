@@ -2,14 +2,14 @@
 
 Interface web do Reagent: **Vite + React 19 + TypeScript + Tailwind v4**.
 
-Com o backend rodando (`python -m src.server`), a interface entra em modo **LIVE**: agente real, sessões do `.reagent/` (SQLite), streaming por SSE. Sem backend, cai num modo **DEMO** com agente simulado ([src/mock/agent.ts](src/mock/agent.ts), que emite os mesmos eventos da API real).
+Com o backend rodando (`npm run dev:server` na raiz do projeto, ou `reagent serve` já instalado), a interface entra em modo **LIVE**: agente real, sessões do `.reagent/sessions/` (arquivos JSONL), streaming por SSE via servidor Hono. Sem backend, cai num modo **DEMO** com agente simulado ([src/mock/agent.ts](src/mock/agent.ts), que emite os mesmos eventos da API real).
 
 ## Rodar
 
 ```bash
 npm install
 npm run dev     # http://localhost:5173 (proxy /api -> 127.0.0.1:8787)
-npm run build   # gera dist/, servido pelo próprio FastAPI na porta 8787
+npm run build   # gera dist/, servido pelo próprio backend Hono na porta 8787
 ```
 
 ## Funcionalidades

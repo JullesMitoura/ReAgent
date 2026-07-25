@@ -20,17 +20,28 @@ export { createApp } from "./app.js";
 export interface ServeOptions {
   port?: number;
   dir?: string;
+  /**
+   * Bind address. Defaults to 127.0.0.1 (local-only). Use 0.0.0.0 inside
+   * containers so published ports reach the process; Host-header anti-
+   * rebinding still rejects non-localhost names.
+   */
+  host?: string;
   /** called once the server is listening, with the base URL. */
   onReady?: (url: string) => void;
 }
 
-/** Binds the server on 127.0.0.1 and calls onReady(url) once listening. */
+/** Binds the server and calls onReady(url) once listening. */
 export function startServer(opts: ServeOptions = {}): void {
   const port = opts.port ?? 8787;
+  const host =
+    opts.host ??
+    process.env.REAGENT_BIND_HOST?.trim() ??
+    "127.0.0.1";
   if (opts.dir !== undefined) config.setRoot(opts.dir);
   config.validate();
   const app = createApp(port);
-  serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => {
+  serve({ fetch: app.fetch, hostname: host, port }, () => {
+    // Advertise a loopback URL even when bound to 0.0.0.0 (browser-open target).
     opts.onReady?.(`http://127.0.0.1:${port}`);
   });
 }

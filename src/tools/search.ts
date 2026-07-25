@@ -13,7 +13,7 @@ import path from "node:path";
 
 import { config, IGNORED_DIRS, PROTECTED_FILES, realpathSafe } from "../config.js";
 import { fnmatch } from "../lib/fnmatch.js";
-import { ToolError } from "./errors.js";
+import { ArgumentError, ToolError } from "./errors.js";
 
 // Result cap aligned with opencode (grep/glob cap at 100 with a note):
 // 100 hits are enough to locate; more than that is noise paid for in tokens.
@@ -120,6 +120,12 @@ export function globFiles(pattern: string): string {
 
 /** Tool grep: line-by-line regex over text files under ROOT. */
 export function grep(pattern: string, searchPath = ".", include: string | null = null): string {
+  if (typeof pattern !== "string") {
+    // new RegExp() would silently coerce a non-string via .toString() (e.g. an
+    // object becomes the literal "[object Object]") and compile a nonsense
+    // regex that matches the wrong things instead of erroring
+    throw new ArgumentError(`'pattern' must be a string, got ${typeof pattern}`);
+  }
   let rx: RegExp;
   try {
     rx = new RegExp(pattern);

@@ -116,6 +116,7 @@ export class Agent {
     if (turn) {
       turn.emit = wrapped;
       turn.bgNotifyHost = this.session;
+      turn.sessionPermissions = this.session;
     }
     const historyTokens = Math.max(
       this.session.usage.last_prompt_tokens ?? 0,

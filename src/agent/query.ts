@@ -34,13 +34,18 @@ import {
   type UsageLike,
 } from "./stream.js";
 import {
+  CONTEXT_WARNING_RATIO,
+  MAX_OUTPUT_RECOVERIES,
   STATUS_COMPACTING,
   STATUS_CONTENT_FILTER,
+  STATUS_CONTEXT_WARNING,
   STATUS_CTX_EXCEEDED,
   STATUS_CTX_EXHAUSTED,
+  STATUS_MAX_OUTPUT_CONTINUE,
   STATUS_STEERED,
   STATUS_STREAM_PARTIAL,
   STATUS_STREAM_RETRY,
+  STATUS_THINKING,
   STATUS_TRUNCATED,
   STREAM_RETRY_LIMIT,
   TOOL_ERROR_PREFIXES,
@@ -49,6 +54,13 @@ import {
 import { reminderMessageForRound } from "../prompts/reminders/inject.js";
 
 const log = getLogger("agent.query");
+
+// tool_start's args preview is capped mid-stream so the UI can react before a
+// call finishes streaming; debug verbosity widens it since that mode promises
+// "complete arguments" (agent-render.ts renders this raw, unfiltered).
+function argsPreviewLimit(): number {
+  return config.verbosity === "debug" ? 4000 : 200;
+}
 
 function drainBgNotifications(host: QueryLoopHost, emit: EmitFn): number {
   let drained = 0;
@@ -120,9 +132,15 @@ export async function* queryLoop(
   let contextRetried = false;
   // Stop-hook death-spiral guard: at most 2 blocked completions per turn.
   let stopHookContinuations = 0;
+  // Max-output recovery: finish_reason=length with no tools → continue mid-thought.
+  let maxOutputRecoveries = 0;
+  let contextWarningEmitted = false;
+  // Assembled assistant text across max-output continuations (for stop hooks /
+  // final done — each stream round only returns its own segment).
+  let assembledAnswer = "";
 
   // Immediate feedback (CLI spinner / web thinking label) before first model tokens.
-  wrapped({ type: "status", text: "Thinking…" });
+  wrapped({ type: "status", text: STATUS_THINKING });
 
   for (let iter = 0; iter < config.maxIterations; iter++) {
     host.drainSteering(wrapped);
@@ -136,6 +154,21 @@ export async function* queryLoop(
     // Live emit: tool_start fires as each call becomes ready (mid-stream), tool_end on drain.
     const early = new StreamingToolExecutor(wrapped);
     const earlyIds = new Set<string>();
+    // agent(background=true) is concurrency-safe but NOT idempotent: dispatching
+    // it really spawns a sub-agent. Unlike read-only concurrency-safe tools
+    // (grep, read_file, ...), letting the doom-loop breaker only swap the text
+    // afterward still repeats that side effect every round. checkAgentDoom
+    // records+decides once per call, up front, so a tripped call is never
+    // dispatched at all; doomDecided lets the shared result loop below reuse
+    // that verdict instead of calling doomLoop.record() a second time.
+    const doomDecided = new Map<string, boolean>();
+    const earlyBlocked: Record<string, string> = {};
+    const checkAgentDoom = (tc: { id: string; name: string; arguments: string }): boolean => {
+      if (tc.name !== "agent") return false;
+      const tripped = doomLoop.record(tc.name, tc.arguments);
+      doomDecided.set(tc.id, tripped);
+      return tripped;
+    };
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -148,7 +181,12 @@ export async function* queryLoop(
         const r = await host.streamCompletion(onToken, stepSchemas, (tc) => {
           if (isCallConcurrencySafe(tc.name, tc.arguments) && tc.id && !earlyIds.has(tc.id)) {
             earlyIds.add(tc.id);
-            early.add(tc);
+            if (checkAgentDoom(tc)) {
+              log.warning("doom loop: %s repeated 3 times (blocked before dispatch)", tc.name);
+              earlyBlocked[tc.id] = doomLoopMessage(tc.name);
+            } else {
+              early.add(tc);
+            }
           }
         });
         content = r.content;
@@ -222,12 +260,41 @@ export async function* queryLoop(
       cached_prompt_tokens: u.cached_prompt_tokens ?? 0,
       context_window: config.contextWindowTokens,
     });
+    // One-shot proactive warning before the hard compact threshold.
+    if (
+      !contextWarningEmitted &&
+      config.contextWindowTokens > 0 &&
+      (u.last_prompt_tokens ?? 0) >= config.contextWindowTokens * CONTEXT_WARNING_RATIO
+    ) {
+      contextWarningEmitted = true;
+      const pct = Math.round((100 * (u.last_prompt_tokens ?? 0)) / config.contextWindowTokens);
+      wrapped({ type: "status", text: STATUS_CONTEXT_WARNING(pct) });
+    }
 
     if (toolCalls.length === 0) {
       if (host.drainSteering(wrapped)) {
         continue;
       }
-      const final = content || "(empty response)";
+      assembledAnswer += content;
+      // Claude Code-style max-output recovery: truncated completion with no
+      // tool calls → nudge the model to continue mid-thought (up to N times)
+      // instead of ending the turn with a half-written answer.
+      if (finishReason === "length" && maxOutputRecoveries < MAX_OUTPUT_RECOVERIES) {
+        maxOutputRecoveries += 1;
+        wrapped({
+          type: "status",
+          text: STATUS_MAX_OUTPUT_CONTINUE(maxOutputRecoveries, MAX_OUTPUT_RECOVERIES),
+        });
+        host.messages.push({
+          role: "user",
+          content:
+            "<system-reminder>Your previous response was truncated by the output token limit. " +
+            "Continue exactly where you left off. Do not repeat content already written. " +
+            "Do not mention this reminder to the user.</system-reminder>",
+        });
+        continue;
+      }
+      const final = assembledAnswer || content || "(empty response)";
       let stop: { block: boolean; reason?: string } = { block: false };
       try {
         stop = runStopHooks(final);
@@ -249,6 +316,11 @@ export async function* queryLoop(
       return final;
     }
 
+    // A successful tool round resets the max-output recovery budget and any
+    // partial assembled prose (tools are the main work of this turn).
+    maxOutputRecoveries = 0;
+    assembledAnswer = "";
+
     // Run tools with live tool_start → work → tool_end (not start+end after the fact).
     let precomputed: Record<string, string> = {};
     const allSafe =
@@ -259,22 +331,35 @@ export async function* queryLoop(
     if (earlyIds.size > 0) {
       for (const tc of toolCalls) {
         if (!earlyIds.has(tc.id)) {
-          early.add(tc);
+          earlyIds.add(tc.id);
+          if (checkAgentDoom(tc)) {
+            log.warning("doom loop: %s repeated 3 times (blocked before dispatch)", tc.name);
+            earlyBlocked[tc.id] = doomLoopMessage(tc.name);
+          } else {
+            early.add(tc);
+          }
         }
       }
       precomputed = await early.drainOrdered();
+      Object.assign(precomputed, earlyBlocked);
       endsAlreadyEmitted = true;
     } else if (allSafe) {
-      for (const tc of toolCalls) {
+      const toRun = toolCalls.filter((tc) => {
+        if (!checkAgentDoom(tc)) return true;
+        log.warning("doom loop: %s repeated 3 times (blocked before dispatch)", tc.name);
+        precomputed[tc.id] = doomLoopMessage(tc.name);
+        return false;
+      });
+      for (const tc of toRun) {
         log.info("tool call: %s args=%s", tc.name, redact(tc.arguments));
         wrapped({
           type: "tool_start",
           id: tc.id,
           name: tc.name,
-          args: tc.arguments.slice(0, 200),
+          args: tc.arguments.slice(0, argsPreviewLimit()),
         });
       }
-      precomputed = await host.dispatchParallel(toolCalls);
+      Object.assign(precomputed, await host.dispatchParallel(toRun));
     } else {
       // Sequential / mixed: start → run → end per tool so the UI stays live.
       const roundResults: Array<{ name: string; result: string }> = [];
@@ -284,7 +369,7 @@ export async function* queryLoop(
           type: "tool_start",
           id: tc.id,
           name: tc.name,
-          args: tc.arguments.slice(0, 200),
+          args: tc.arguments.slice(0, argsPreviewLimit()),
         });
         let result: string;
         if (doomLoop.record(tc.name, tc.arguments)) {
@@ -306,7 +391,7 @@ export async function* queryLoop(
       appendRoundReminders(host, roundResults);
       host.session.todos = getTodos();
       host.session.save();
-      wrapped({ type: "status", text: "Thinking…" });
+      wrapped({ type: "status", text: STATUS_THINKING });
       await compactIfOverThreshold(host, wrapped);
       continue;
     }
@@ -317,9 +402,15 @@ export async function* queryLoop(
         log.info("tool call: %s args=%s", tc.name, redact(tc.arguments));
       }
       let result: string;
-      if (doomLoop.record(tc.name, tc.arguments)) {
+      // Reuse the verdict already recorded above (checkAgentDoom) instead of
+      // calling doomLoop.record() a second time, which would double-count
+      // this call in the shared history.
+      const tripped = doomDecided.has(tc.id)
+        ? doomDecided.get(tc.id)!
+        : doomLoop.record(tc.name, tc.arguments);
+      if (tripped) {
         log.warning("doom loop: %s repeated 3 times", tc.name);
-        result = doomLoopMessage(tc.name);
+        result = precomputed[tc.id] ?? doomLoopMessage(tc.name);
       } else {
         result = precomputed[tc.id] ?? (await dispatch(tc.name, tc.arguments));
       }
@@ -339,7 +430,7 @@ export async function* queryLoop(
 
     host.session.todos = getTodos();
     host.session.save();
-    wrapped({ type: "status", text: "Thinking…" });
+    wrapped({ type: "status", text: STATUS_THINKING });
 
     await compactIfOverThreshold(host, wrapped);
   }
@@ -347,7 +438,10 @@ export async function* queryLoop(
   const final =
     `Reached the tool-iteration limit (${config.maxIterations} rounds) for this turn. ` +
     "Ask me to continue if the task is not finished.";
-  wrapped({ type: "done", content: final });
+  // Marked distinctly from a normal completion so callers (CLI exit code,
+  // JSON consumers) can tell "the agent gave up on the round budget" apart
+  // from "the task actually finished" instead of both looking like exit 0.
+  wrapped({ type: "done", content: final, truncated: true });
   return final;
 }
 

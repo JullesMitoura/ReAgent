@@ -8,4 +8,4 @@ export const GIT_SAFETY =
 - Never amend commits you did not create.
 - Treat the repository state as the user's property.
 - Only create commits when the user asks for them.
-- The stash stack is shared with other worktrees and sessions: prefer a WIP commit to set work aside. If you must stash, use git stash push -u -m "<tag>" and restore with git stash apply (never a blind git stash pop), then drop your entry by tag.`;
+- The stash stack is shared with other worktrees and sessions: prefer a WIP commit to set work aside. If you must stash, use git stash push -u -m "<tag>" then immediately capture its SHA via git stash list --format="%H %gs", restore with git stash apply <sha> (never a blind git stash pop or clear, which act on whatever is on top and may belong to another session), then drop your entry by re-finding it by tag first.`;

@@ -12,12 +12,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ChangeTracker } from "../src/changes.js";
 import { config } from "../src/config.js";
 import { newTurnContext, runWithTurn } from "../src/turn-context.js";
-import { ToolError } from "../src/tools/errors.js";
+import type { PermissionHandler } from "../src/turn-context.js";
+import { ArgumentError, ToolError } from "../src/tools/errors.js";
 import {
   _diagnostics,
   _testHooks,
+  deleteFile,
   editFile,
   listDir,
+  multiEdit,
   readFile,
   writeFile,
 } from "../src/tools/files.js";
@@ -52,6 +55,26 @@ async function likeDispatch(fn: () => string | Promise<string>): Promise<string>
     if (err instanceof ToolError) return `Error: ${err.message}`;
     throw err;
   }
+}
+
+/**
+ * Runs fn with an injected permissionHandler (autoApprove off), capturing the
+ * (kind, action, preview) of every confirmFile call it triggers. Mirrors
+ * apply-patch.test.ts's applyWithHandler: the real production path (turn
+ * context) rather than monkeypatching confirmFile directly.
+ */
+async function withCapturedPreview<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; previews: (string | null)[] }> {
+  config.autoApprove = false;
+  const previews: (string | null)[] = [];
+  const handler: PermissionHandler = async (_kind, _action, preview) => {
+    previews.push(preview);
+    return "once";
+  };
+  const ctx = newTurnContext({ permissionHandler: handler });
+  const result = await runWithTurn(ctx, fn);
+  return { result, previews };
 }
 
 describe("files", () => {
@@ -98,6 +121,19 @@ describe("files", () => {
     const out = readFile("short.txt", 50);
     expect(out).toContain("offset 50 is past the end");
     expect(out).toContain("2 lines total");
+  });
+
+  it("test_read_rejects_non_numeric_offset", () => {
+    fs.writeFileSync(path.join(project, "a.txt"), "one\ntwo\nthree\n");
+    // regression: a string offset used to silently degrade (Array.slice(NaN, NaN))
+    // to an empty result instead of erroring, so the model would wrongly
+    // conclude the file was empty
+    expect(() => readFile("a.txt", "abc" as unknown as number)).toThrow(ArgumentError);
+  });
+
+  it("test_read_rejects_non_numeric_limit", () => {
+    fs.writeFileSync(path.join(project, "a.txt"), "one\ntwo\nthree\n");
+    expect(() => readFile("a.txt", 1, "abc" as unknown as number)).toThrow(ArgumentError);
   });
 
   it("test_read_missing_file_suggests_similar_names", async () => {
@@ -224,5 +260,174 @@ describe("files", () => {
     expect(fs.readFileSync(p).equals(original)).toBe(false);
     tracker.undo();
     expect(fs.readFileSync(p).equals(original)).toBe(true);
+  });
+});
+
+// --- concurrent-writer guard: write/edit/multi_edit/delete snapshot `before`,
+// then AWAIT permission (which can take a long time), then mutate. If another
+// writer changes the file on disk in that window, the tool must abort instead
+// of silently clobbering it. The permissionHandler itself plays the role of
+// "the other writer": it mutates the file synchronously before resolving, the
+// same way a concurrent agent's write would land while this call is pending.
+
+describe("concurrent writer guard", () => {
+  it("test_write_aborts_when_file_changed_concurrently", async () => {
+    const p = path.join(project, "race.txt");
+    fs.writeFileSync(p, "original\n");
+    const handler: PermissionHandler = async () => {
+      fs.writeFileSync(p, "concurrent-writer\n");
+      return "once";
+    };
+    const ctx = newTurnContext({ permissionHandler: handler });
+    config.autoApprove = false;
+    const out = await runWithTurn(ctx, () => likeDispatch(() => writeFile("race.txt", "mine\n")));
+    expect(out).toContain("changed on disk");
+    // the concurrent writer's content survived; "mine" never landed
+    expect(fs.readFileSync(p, "utf8")).toBe("concurrent-writer\n");
+  });
+
+  it("test_edit_aborts_when_file_changed_concurrently", async () => {
+    const p = path.join(project, "race-edit.txt");
+    fs.writeFileSync(p, "alpha\nbeta\ngamma\n");
+    const handler: PermissionHandler = async () => {
+      fs.writeFileSync(p, "alpha\nCONCURRENT\ngamma\n");
+      return "once";
+    };
+    const ctx = newTurnContext({ permissionHandler: handler });
+    config.autoApprove = false;
+    const out = await runWithTurn(ctx, () =>
+      likeDispatch(() => editFile("race-edit.txt", "beta", "MINE")),
+    );
+    expect(out).toContain("changed on disk");
+    expect(fs.readFileSync(p, "utf8")).toBe("alpha\nCONCURRENT\ngamma\n");
+  });
+
+  it("test_multi_edit_aborts_when_file_changed_concurrently", async () => {
+    const p = path.join(project, "race-multi.txt");
+    fs.writeFileSync(p, "one\ntwo\nthree\n");
+    const handler: PermissionHandler = async () => {
+      fs.writeFileSync(p, "one\nCONCURRENT\nthree\n");
+      return "once";
+    };
+    const ctx = newTurnContext({ permissionHandler: handler });
+    config.autoApprove = false;
+    const out = await runWithTurn(ctx, () =>
+      likeDispatch(() => multiEdit("race-multi.txt", [{ old_string: "two", new_string: "MINE" }])),
+    );
+    expect(out).toContain("changed on disk");
+    expect(fs.readFileSync(p, "utf8")).toBe("one\nCONCURRENT\nthree\n");
+  });
+
+  it("test_delete_aborts_when_file_changed_concurrently", async () => {
+    const p = path.join(project, "race-delete.txt");
+    fs.writeFileSync(p, "original\n");
+    const handler: PermissionHandler = async () => {
+      fs.writeFileSync(p, "concurrent-writer\n");
+      return "once";
+    };
+    const ctx = newTurnContext({ permissionHandler: handler });
+    config.autoApprove = false;
+    const out = await runWithTurn(ctx, () => likeDispatch(() => deleteFile("race-delete.txt")));
+    expect(out).toContain("changed on disk");
+    // the concurrently-written file must still be on disk, untouched
+    expect(fs.readFileSync(p, "utf8")).toBe("concurrent-writer\n");
+  });
+
+  it("test_sequential_edit_within_one_turn_is_unaffected", async () => {
+    // the common case (read, then edit once) must NOT be flagged: nothing
+    // changes the file between the snapshot and the write in this path
+    const p = path.join(project, "sequential.txt");
+    fs.writeFileSync(p, "before\n");
+    const result = await writeFile("sequential.txt", "after\n");
+    expect(result).toContain("overwritten");
+    expect(fs.readFileSync(p, "utf8")).toBe("after\n");
+  });
+});
+
+// --- diff preview shown in the write/edit/multi_edit confirmation ----------
+
+describe("diff preview", () => {
+  it("test_edit_preview_marks_single_line_change", async () => {
+    fs.writeFileSync(path.join(project, "single.txt"), "alpha\nbeta\ngamma\n");
+    const { previews } = await withCapturedPreview(() => editFile("single.txt", "beta", "BETA"));
+    expect(previews).toHaveLength(1);
+    const lines = previews[0]!.split("\n");
+    expect(lines).toContain("-beta");
+    expect(lines).toContain("+BETA");
+    expect(lines).toContain(" alpha"); // unchanged context, space-prefixed
+    expect(lines).toContain(" gamma");
+    // the old flat dump is gone
+    expect(previews[0]).not.toContain("--- remove ---");
+    expect(previews[0]).not.toContain("--- insert ---");
+  });
+
+  it("test_edit_preview_marks_multiline_change_with_add_remove_and_context", async () => {
+    const content = "line1\nline2\nline3\nline4\nline5\nline6\nline7\n";
+    fs.writeFileSync(path.join(project, "multi.txt"), content);
+    const { previews } = await withCapturedPreview(() =>
+      editFile("multi.txt", "line3\nline4\nline5", "line3\nCHANGED\nline5\nNEWLINE"),
+    );
+    const lines = previews[0]!.split("\n");
+    expect(lines).toContain("-line4"); // removed
+    expect(lines).toContain("+CHANGED"); // added in place of line4
+    expect(lines).toContain("+NEWLINE"); // added after line5
+    expect(lines).toContain(" line3"); // unchanged context before the change
+    expect(lines).toContain(" line5"); // unchanged context between the two edits
+    expect(lines).toContain(" line6"); // unchanged context after the change
+    // line3/line5 must NOT also show up as removed: they are unchanged, not replaced
+    expect(lines).not.toContain("-line3");
+    expect(lines).not.toContain("-line5");
+  });
+
+  it("test_write_preview_diffs_overwrite_against_existing_content", async () => {
+    fs.writeFileSync(path.join(project, "over.txt"), "old1\nold2\nold3\n");
+    const { previews } = await withCapturedPreview(() =>
+      writeFile("over.txt", "old1\nNEW2\nold3\n"),
+    );
+    const lines = previews[0]!.split("\n");
+    expect(lines).toContain("-old2");
+    expect(lines).toContain("+NEW2");
+    expect(lines).toContain(" old1");
+    expect(lines).toContain(" old3");
+  });
+
+  it("test_write_preview_for_new_file_marks_all_lines_as_additions", async () => {
+    const { previews } = await withCapturedPreview(() => writeFile("brand.txt", "a\nb\n"));
+    expect(previews[0]).toContain("--- /dev/null"); // difflib convention for "did not exist"
+    const lines = previews[0]!.split("\n");
+    expect(lines).toContain("+a");
+    expect(lines).toContain("+b");
+    // nothing to remove: no removal lines besides the "--- /dev/null" header
+    expect(lines.some((l) => l.startsWith("-") && !l.startsWith("---"))).toBe(false);
+  });
+
+  it("test_multi_edit_preview_is_one_combined_diff_not_per_edit_blocks", async () => {
+    fs.writeFileSync(path.join(project, "m.txt"), "one\ntwo\nthree\nfour\nfive\n");
+    const { previews } = await withCapturedPreview(() =>
+      multiEdit("m.txt", [
+        { old_string: "two", new_string: "TWO" },
+        { old_string: "four", new_string: "FOUR" },
+      ]),
+    );
+    expect(previews).toHaveLength(1); // a single confirmation for the whole multi-edit
+    const lines = previews[0]!.split("\n");
+    expect(lines).toContain("-two");
+    expect(lines).toContain("+TWO");
+    expect(lines).toContain("-four");
+    expect(lines).toContain("+FOUR");
+    expect(lines).toContain(" three"); // context between the two edits
+    // the old per-edit "[edit N]" markers are gone
+    expect(previews[0]).not.toContain("[edit 1]");
+    expect(previews[0]).not.toContain("[edit 2]");
+  });
+
+  it("test_edit_preview_truncates_very_large_diffs", async () => {
+    const before = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n");
+    const after = Array.from({ length: 100 }, (_, i) => `CHANGED${i}`).join("\n");
+    fs.writeFileSync(path.join(project, "big.txt"), before + "\n");
+    const { previews } = await withCapturedPreview(() => editFile("big.txt", before, after));
+    expect(previews[0]).toContain("more diff lines");
+    // bounded: header + hunk marker + the truncation limit + the marker line itself
+    expect(previews[0]!.split("\n").length).toBeLessThan(70);
   });
 });
