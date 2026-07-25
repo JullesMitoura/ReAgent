@@ -22,5 +22,3 @@ npm run build   # gera dist/, servido pelo próprio FastAPI na porta 8787
 | Modal de pergunta interativa do agente | [src/components/QuestionModal.tsx](src/components/QuestionModal.tsx) |
 | Painel de tarefas + uso de tokens | [src/components/TodoPanel.tsx](src/components/TodoPanel.tsx) |
 | Cliente da API (SSE, permissões, stop, busca, delete) | [src/api.ts](src/api.ts) |
-
-Screenshots em [screenshots/](screenshots/).

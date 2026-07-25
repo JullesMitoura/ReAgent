@@ -14,7 +14,8 @@
     "dist",
     "bin",
     "static",
-    "scripts/postinstall.mjs"
+    "scripts/postinstall.mjs",
+    "scripts/migrate-sessions.mjs"
   ],
   "workspaces": [
     "ui"

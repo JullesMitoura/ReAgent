@@ -204,7 +204,7 @@ export class Agent {
     sanitizeMessages(this.session.messages);
   }
 
-  /** @deprecated Prefer runToolBatches; kept for tests that call Agent.dispatchParallel. */
+  /** Runs a batch of concurrency-safe tool calls in parallel; used both in the live round-dispatch path and by tests. */
   async dispatchParallel(toolCalls: StreamToolCall[]): Promise<Record<string, string>> {
     return runToolBatches(
       toolCalls.map((tc) => ({
