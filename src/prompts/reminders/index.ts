@@ -1,10 +1,10 @@
 /** Situational system reminders (injected mid-turn, not into the stable system prefix). */
 
 export const REMINDER_AGENT_LAUNCHED =
-  "<system-reminder>A sub-agent was launched. Do not duplicate its work, do not invent results, and do not poll its transcript. Wait for the tool result.</system-reminder>";
+  "<system-reminder>A sub-agent was launched. Do not duplicate its work, do not invent results, and do not read or tail its raw transcript/output file (read_file, cat, tail); wait for the tool result. Treat the raw agent/task id as internal only, never quote or paste it into a user-facing reply; to continue it later, use send_message with to: <id>.</system-reminder>";
 
 export const REMINDER_TRUNCATED_READ =
-  "<system-reminder>A prior read was truncated. Grep or re-read with offset/limit if you need the omitted region; do not guess.</system-reminder>";
+  "<system-reminder>A prior read was truncated. Grep or re-read with offset/limit if you need the omitted region; do not guess. If it truncates again, progressively shrink the requested window until you get a complete read; treat this as blocking, do not reason about or edit the file until the needed part reads in full.</system-reminder>";
 
 export const REMINDER_DENIAL =
   "<system-reminder>The user denied a tool call. Do not retry the same action verbatim; adjust approach or ask what they prefer.</system-reminder>";

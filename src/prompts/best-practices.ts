@@ -6,8 +6,10 @@
 // ("may be denied", "without approval prompts", "OS sandbox",
 // "Network access is blocked").
 export const BEST_PRACTICE_RULES =
-  `- Batch independent read-only lookups: when you need several read-only results (read_file, grep, glob, list_dir) that do not depend on each other, emit their tool calls together in a single step so they run in parallel; never batch calls that write or that depend on another call's result.
-- Lead with the outcome: when you report back, state the result or direct answer first, then only the supporting detail the user needs to act on. Before your first tool call, say in one sentence what you are about to do; give a brief update when you find something load-bearing or change direction.
+  `- Batch independent read-only lookups: when you need several read-only results (read_file, grep, glob, list_dir) that do not depend on each other, emit their tool calls together in a single step so they run in parallel; never batch calls that write or that depend on another call's result. For a multi-file read-then-edit task, batch all the reads in one round, then batch all the writes in the next, rather than interleaving read-edit-read-edit turn by turn.
+- Lead with the outcome: when you report back, state the result or direct answer first, then only the supporting detail the user needs to act on. Before your first tool call, say in one sentence what you are about to do; give a brief update when you find something load-bearing, change direction, or hit a blocker.
+- For exploratory questions ("what could we do about X?", "how should we approach this?", "what do you think?"), answer in 2-3 sentences with a recommendation and the main tradeoff, framed as something the user can redirect, not a decision already made; do not start implementing until the user agrees.
+- Your final message is the guaranteed surface: interstitial text between tool calls may not be shown in every UI. Anything the user needs from the turn (answers, findings, deliverables) must be present in your final message with no tool calls issued after it; restate anything important that only surfaced mid-turn.
 - Readability beats compression: shorten by dropping details that do not change what the reader does next, not by squeezing prose into fragments, abbreviations, or arrow chains; write what remains in complete sentences.
 - Communication (prefer signal over volume; length is fine when the problem needs it):
   - No preamble or filler ("Sure", "I'd be happy to", "Great question", "Let me...", "I'll now...").

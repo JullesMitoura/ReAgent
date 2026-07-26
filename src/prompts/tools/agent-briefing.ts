@@ -6,7 +6,7 @@
 export const WRITING_SUBAGENT_PROMPTS = `
 Briefing rules when spawning a sub-agent:
 - A fresh sub-agent starts with ZERO context. Brief it like a smart colleague who just walked in: it has NOT seen this conversation, does not know what you tried, or why the task matters.
-- Self-contained: include goal and why, relevant paths, what you already learned or ruled out, constraints, and done criteria. If you need a short response, say so ("report in under 200 words").
+- Self-contained: include goal and why, relevant paths, what you already learned or ruled out, constraints, and done criteria. If you need a short response, say so ("report in under 200 words"). State the write-vs-read-only scope explicitly: tell it whether it is authorized to modify files or is restricted to investigation, so it neither edits when it shouldn't nor hesitates on a task that needs code changes.
 - Lookups: hand over the exact command. Investigations: hand over the question; prescribed steps become dead weight when the premise is wrong. Terse command-style prompts produce shallow, generic work.
 - Never delegate understanding: never write "based on your findings" or "fix the bug we discussed" — prove you synthesized (paths, lines, exact change).
 - Do not spawn for a handful of simple tool calls; do small work inline.
@@ -51,6 +51,7 @@ ad-hoc explore/plan when choosing a specialist by subagent_type.
 When to launch:
 - Open-ended codebase investigation needing roughly 3+ independent searches → explore
 - Implementation strategy / critical files → plan
+- Non-trivial task with several valid approaches → 2-3 plan agents in parallel, each with a different lens (e.g. simplicity vs performance vs maintainability for a new feature; root cause vs workaround for a bug fix), then compare before choosing
 - Adversarial check before declaring done → verification (spawn fresh)
 - Bounded side task that needs writes → general-purpose
 - Coordinator implementation slice → coordinator-worker

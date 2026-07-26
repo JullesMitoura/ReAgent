@@ -32,6 +32,7 @@ import {
   SANDBOX_NETWORK_LINE,
   SANDBOX_OS_LINE,
   SANDBOX_READONLY_LINE,
+  SANDBOX_REPEATED_DENIAL_LINE,
   USER_PROFILE_LABEL,
   projectInstructionsLabel,
 } from "./core/index.js";
@@ -76,6 +77,7 @@ function sandboxRules(): string {
     if (!config.sandboxNetwork) {
       lines.push(SANDBOX_NETWORK_LINE);
     }
+    lines.push(SANDBOX_REPEATED_DENIAL_LINE);
   }
   lines.push(SANDBOX_READONLY_LINE);
   if (config.autoApprove) {

@@ -7,6 +7,9 @@ dist/
 ui/dist/
 static/
 
+# claude code artifacts
+.claude/
+
 # agent runtime state
 .reagent/
 refs/
@@ -21,3 +24,4 @@ refs/
 .env
 .env.local
 .env.production
+.npmrc

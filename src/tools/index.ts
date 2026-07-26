@@ -165,7 +165,9 @@ export const TOOL_SCHEMAS: object[] = [
       name: "read_file",
       description:
         "Reads a project file with numbered lines. Use offset/limit for large files. " +
-        "Always use this tool instead of cat/head/tail via bash.",
+        "Always use this tool instead of cat/head/tail via bash. If a path was supplied by the " +
+        "user or a prior tool result, attempt the read directly rather than checking existence " +
+        "first (ls/find); a failed read already returns a clear not-found error.",
       parameters: {
         type: "object",
         properties: {
@@ -202,10 +204,11 @@ export const TOOL_SCHEMAS: object[] = [
       name: "edit_file",
       description:
         "Replaces old_string with new_string in a file (exact match). Read the file before " +
-        "editing. old_string must uniquely identify one spot — include enough surrounding " +
-        "context (preserving exact indentation); the edit fails if it matches more than " +
-        "once. Use replace_all to change every occurrence (e.g. renaming a variable). " +
-        "Requires user approval.",
+        "editing. old_string must uniquely identify one spot (preserving exact indentation); " +
+        "the edit fails if it matches more than once. Keep old_string minimal, usually 1-3 " +
+        "lines, just enough to be unique; extra surrounding context beyond that wastes tokens. " +
+        "If it is not unique, add only the minimum extra context needed, or use replace_all to " +
+        "change every occurrence (e.g. renaming a variable). Requires user approval.",
       parameters: {
         type: "object",
         properties: {
@@ -276,8 +279,9 @@ export const TOOL_SCHEMAS: object[] = [
     function: {
       name: "glob",
       description:
-        "Finds files by glob pattern, e.g. '*.py' or 'src/**/*.py'. " +
-        "Use this instead of find via bash.",
+        "Finds files by glob pattern, e.g. '*.py' or 'src/**/*.py'. Results are sorted by " +
+        "modification time, most recently modified first, so the order itself can point out " +
+        "recently-touched files. Use this instead of find via bash.",
       parameters: {
         type: "object",
         properties: { pattern: { type: "string" } },
@@ -311,14 +315,26 @@ export const TOOL_SCHEMAS: object[] = [
         "Runs a shell command at the project root and returns its output. Requires user approval.\n" +
         "Usage notes:\n" +
         "- Prefer the dedicated tools over shell equivalents: read_file instead of cat/head/tail, " +
-        "edit_file instead of sed/awk, grep and glob tools instead of grep/find.\n" +
+        "edit_file instead of sed/awk, grep and glob tools instead of grep/find. Never create or " +
+        "overwrite a file via shell redirection or a heredoc (echo \"...\" > file, cat <<EOF > file); " +
+        "use write_file/edit_file, which go through the review/diff flow.\n" +
         "- Always quote file paths that contain spaces with double quotes " +
         '(e.g. ls "path with spaces").\n' +
-        "- Avoid `cd`: use paths relative to the project root instead.\n" +
+        "- Avoid `cd`: use paths relative to the project root instead. The working directory " +
+        "persists between commands, but shell state does not: each call starts a fresh shell, so " +
+        "exported variables, sourced environments, or activated virtualenvs from a prior call are " +
+        "not available in the next one unless re-established or chained with &&.\n" +
+        "- If your command will create new files or directories, first run `ls` on the parent " +
+        "directory to confirm it exists and is the right location.\n" +
+        "- For scratch/temp files, prefer $TMPDIR or `mktemp` over a hardcoded /tmp path.\n" +
+        "- If you must sleep, keep it short (a few seconds); do not sleep between commands that " +
+        "can run immediately, just run them; and when polling a process, issue the check command " +
+        "itself first rather than sleeping before checking.\n" +
         "- NEVER use echo/printf to communicate with the user; output text directly in your response.\n" +
-        "Git: only commit when the user explicitly asks. Never skip hooks (--no-verify), never " +
-        "force-push to main/master, never amend commits you did not create; pass commit messages " +
-        "via a HEREDOC.",
+        "Git: only commit when the user explicitly asks. Never skip hooks (--no-verify) or bypass " +
+        "commit signing (--no-gpg-sign), never force-push to main/master, never amend commits you " +
+        "did not create, never use interactive flags (-i) since there is no interactive channel; " +
+        "pass commit messages via a HEREDOC.",
       parameters: {
         type: "object",
         properties: {
@@ -347,7 +363,10 @@ export const TOOL_SCHEMAS: object[] = [
       name: "task_output",
       description:
         "Shows the status and recent output (log tail) of a background task started with " +
-        "bash run_in_background. Without task_id, lists all background tasks.",
+        "bash run_in_background. Without task_id, lists all background tasks. Silence is not " +
+        "success: a completion check that only watches for a success marker looks identical to " +
+        "'still running' when the process actually crashed or hung. Also watch for a non-zero " +
+        "exit, a traceback, 'Killed', or an explicit timeout before concluding it worked.",
       parameters: {
         type: "object",
         properties: {
@@ -384,7 +403,8 @@ export const TOOL_SCHEMAS: object[] = [
         "exactly ONE item in_progress at a time (mark it BEFORE starting work) and mark items " +
         "completed IMMEDIATELY after finishing each one — never batch completions. Only mark " +
         "completed when fully done; if blocked or tests fail, keep it in_progress and add a " +
-        "new item for what must be resolved. content is the imperative form (\"Run tests\"); " +
+        "new item for what must be resolved. Remove items that are no longer relevant from the " +
+        "list entirely rather than leaving them dangling. content is the imperative form (\"Run tests\"); " +
         "activeForm is the present-continuous form (\"Running tests\") shown while in_progress.",
       parameters: {
         type: "object",
@@ -421,9 +441,15 @@ export const TOOL_SCHEMAS: object[] = [
       description:
         "Saves a durable fact about the USER (not the project) to their global profile " +
         "(~/.reagent/USER.md), which is shown to you in every future session across all " +
-        "projects. Use it when the user states a lasting preference: their name, how they " +
-        "like code written, tools or patterns they avoid, response style. Do not save " +
-        "project-specific or one-off facts.",
+        "projects. Use it when the " +
+        "user states a lasting preference (their name, how they like code written, tools or " +
+        "patterns they avoid, response style) or confirms a non-obvious approach worked well. " +
+        "Do not save project-specific, one-off, or already-repo-derivable facts (code " +
+        "structure, git history, AGENTS.md content); never save anything that could read as a " +
+        "negative judgment of the user. Convert relative dates ('Thursday') to absolute ones " +
+        "before saving. Treat the profile shown to you as a snapshot, not guaranteed current: " +
+        "if a saved fact names a specific file, function, flag or command, verify it still " +
+        "holds before relying on it.",
       parameters: {
         type: "object",
         properties: {
@@ -445,7 +471,8 @@ export const TOOL_SCHEMAS: object[] = [
         "resolve from the request, the code, or sensible defaults. If the answer would not " +
         "change what you do next, pick the conventional option and proceed. When offering " +
         "choices, provide 2–4 distinct options (never a single option); put the recommended " +
-        "option first and suffix its label with (Recommended). " +
+        "option first and suffix its label with (Recommended). The user can always answer with " +
+        "free text beyond the listed options, so the options do not need to be exhaustive. " +
         "In plan mode use this to clarify requirements, then call exit_plan_mode for approval " +
         "(never ask 'should I proceed?' here).",
       parameters: {
@@ -473,7 +500,12 @@ const _WEBFETCH_SCHEMA = {
   type: "function",
   function: {
     name: "webfetch",
-    description: "Fetches the content of a URL (converted to text).",
+    description:
+      "Fetches the content of a URL (converted to text). Fails or returns a login-wall page " +
+      "for authenticated/private URLs (private repos, internal wikis, Google Docs, Confluence, " +
+      "Jira); recognize this failure mode rather than retrying the same URL. For GitHub URLs " +
+      "(issues, PRs, files, commits), prefer the gh CLI via bash instead, it returns complete " +
+      "structured data rather than truncated HTML-noise text.",
     parameters: {
       type: "object",
       properties: {
@@ -650,7 +682,9 @@ export function activeSchemas(): object[] {
         name: "skill",
         description:
           "Load the full body of a named skill (playbook). Use when a skill from the " +
-          "system catalog matches the task; do not load skills you do not need.",
+          "system catalog matches the task; do not load skills you do not need. If a skill's " +
+          "full instructions are already loaded earlier in this conversation, follow those " +
+          "directly instead of invoking it again.",
         parameters: {
           type: "object",
           properties: {

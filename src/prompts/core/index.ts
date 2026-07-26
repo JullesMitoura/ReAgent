@@ -17,5 +17,6 @@ export {
   SANDBOX_READONLY_LINE,
   SANDBOX_AUTO_APPROVE_LINE,
   SANDBOX_APPROVAL_REQUIRED_LINE,
+  SANDBOX_REPEATED_DENIAL_LINE,
 } from "../sandbox.js";
 export { USER_PROFILE_LABEL, CONTEXT_LABEL, projectInstructionsLabel } from "../sections.js";

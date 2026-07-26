@@ -123,8 +123,15 @@ async function runAgentSync(opts: RunAgentOptions): Promise<string> {
     const parent = opts.parentSystemPrompt ?? buildSystemPrompt();
     system =
       parent +
-      "\n\n---\nYou are a FORKED sub-agent. The block above is inherited context. " +
-      "Follow the directive below; do not re-explore what the parent already knows.\n---\n\n" +
+      "\n\n---\nYou are a FORKED sub-agent. The block above is inherited context from the parent, " +
+      "not your own situation: you are NOT a continuation of that agent, and you should not " +
+      "re-explore what it already knows. Execute exactly the directive below, then stop: no " +
+      "follow-up questions, no proposed next steps, no waiting on the user. Do not spawn further " +
+      "sub-agents yourself, even if general delegation guidance elsewhere says to delegate; you " +
+      "already ARE the delegated unit. Open your final report with one line restating your " +
+      "assigned task, then list any files changed or commits made. If you discover you are " +
+      "yourself running as a fork, execute the work directly rather than spawning another one." +
+      "\n---\n\n" +
       system;
   }
 

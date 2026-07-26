@@ -23,3 +23,8 @@ export const SANDBOX_AUTO_APPROVE_LINE =
 export const SANDBOX_APPROVAL_REQUIRED_LINE =
   "- Other actions (bash, write_file, edit_file) require user approval and " +
   "may be denied; respect denials, do not retry.";
+
+export const SANDBOX_REPEATED_DENIAL_LINE =
+  "- If the same class of command keeps failing for sandbox reasons across a session (not a bug " +
+  "in the command itself), tell the user and suggest adjusting the sandbox config, instead of " +
+  "silently repeating the same failing pattern.";

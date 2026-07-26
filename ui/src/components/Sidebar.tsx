@@ -152,7 +152,7 @@ function SessionItem({
         <div className="flex items-baseline gap-2">
           <span className="min-w-0 flex-1 truncate text-[13px]">{session.title || "(untitled)"}</span>
           {relativeTime(session.updatedAtMs) && (
-            <span className="shrink-0 text-[10px] text-zinc-600 light:text-zinc-400 group-hover/item:hidden">
+            <span className="shrink-0 text-[10px] text-zinc-500 light:text-zinc-400 group-hover/item:hidden">
               {relativeTime(session.updatedAtMs)}
             </span>
           )}
@@ -325,23 +325,19 @@ export function Sidebar({ mode, root = "", sessions, activeId, onSelect, onNew, 
         )}
       </div>
 
-      {!searching && (
+      {!searching && sessions.length > 0 && (
         <div className="flex items-center justify-between px-4 pb-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
             Sessions
-            {sessions.length > 0 && (
-              <span className="ml-1.5 font-normal tracking-normal text-zinc-600 light:text-zinc-400">{sessions.length}</span>
-            )}
+            <span className="ml-1.5 font-normal tracking-normal text-zinc-600 light:text-zinc-400">{sessions.length}</span>
           </span>
-          {sessions.length > 0 && (
-            <button
-              onClick={onClearAll}
-              title="Delete all history"
-              className="rounded text-[10px] text-zinc-600 light:text-zinc-400 transition-colors hover:text-red-400 light:hover:text-red-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/40"
-            >
-              clear all
-            </button>
-          )}
+          <button
+            onClick={onClearAll}
+            title="Delete all history"
+            className="rounded text-[10px] text-zinc-600 light:text-zinc-400 transition-colors hover:text-red-400 light:hover:text-red-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/40"
+          >
+            clear all
+          </button>
         </div>
       )}
 
@@ -381,10 +377,27 @@ export function Sidebar({ mode, root = "", sessions, activeId, onSelect, onNew, 
         ) : (
           <>
             {sessions.length === 0 && (
-              <div className="animate-fade px-2 pt-8 text-center">
-                <div className="font-mono text-[11px] text-zinc-600 light:text-zinc-400">no conversations yet</div>
-                <div className="mt-1 text-[10px] text-zinc-700 light:text-zinc-300">start a new one above</div>
-              </div>
+              <button
+                onClick={onNew}
+                className="group flex w-full flex-col items-center gap-2 rounded-lg px-2 pt-8 pb-6 text-center transition-colors hover:bg-white/[0.03] light:hover:bg-zinc-900/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/40 animate-fade"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="h-6 w-6 text-zinc-700 light:text-zinc-300 transition-colors group-hover:text-cyan-400/70"
+                >
+                  <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.38 8.38 0 0 1-4.06-1.06L3 20l1.06-4.06A8.38 8.38 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3 8.5 8.5 0 0 1 21 11.5z" />
+                </svg>
+                <div className="font-mono text-[11px] text-zinc-500 light:text-zinc-400">no conversations yet</div>
+                <div className="text-[10px] text-zinc-600 light:text-zinc-400 transition-colors group-hover:text-cyan-400/70">
+                  start a new one
+                </div>
+              </button>
             )}
             {groups.map((group) => (
               <div key={group.label} className="space-y-0.5">

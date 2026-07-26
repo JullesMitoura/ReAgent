@@ -83,6 +83,40 @@ exits; not written to disk), **Always allow** (persisted in `.reagent/permission
 and **Deny**. Known-safe read-only commands run without any prompt on any OS; on
 macOS they additionally run inside a Seatbelt sandbox. Other commands always ask first.
 
+### Installing from the Azure Artifacts feed
+
+Once published (see `azure-pipelines.yml`), `reagent` installs like any private npm
+package. One-time setup per machine:
+
+```bash
+npm install -g vsts-npm-auth --registry https://registry.npmjs.com
+```
+
+Add the feed's registry to your user-level `.npmrc` (get the exact URL from the feed's
+**Connect to feed → npm** panel in Azure DevOps, it looks like
+`https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/npm/registry/`):
+
+```
+registry=https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/npm/registry/
+always-auth=true
+```
+
+Then authenticate once (opens a browser / device-code prompt and writes a token into
+`.npmrc`) and install:
+
+```bash
+vsts-npm-auth -config .npmrc
+npm install -g reagent
+```
+
+On Linux/macOS (no `vsts-npm-auth`), generate a Personal Access Token with **Packaging
+(Read)** scope instead and add it as a base64-encoded `_authToken` line under the
+registry in `.npmrc` (the feed's "Connect to feed" panel gives the exact snippet).
+
+`node-pty` is an optional native dependency (used for persistent shell sessions); if a
+machine has no C++ build toolchain it can fail to compile, `npm install` still succeeds,
+just without that feature.
+
 ### Custom commands
 
 A `.reagent/commands/<name>.md` file (per project) or `~/.reagent/commands/<name>.md`
@@ -184,7 +218,7 @@ Optional config in `.reagent/config.json` (per project, re-read on `/cd`): `max_
 worktrees), `deferred_tools` (hide niche tools until unlocked via `tool_search`),
 `workflow` (opt-in deterministic pipeline/parallel multi-agent tool),
 `max_agent_concurrency` (sub-agents running at once) and `max_tool_concurrency`
-(concurrency-safe tools dispatched at once). See `docs/CONTRACTS.md` for defaults and precedence.
+(concurrency-safe tools dispatched at once).
 
 ## Development
 
@@ -193,18 +227,6 @@ npm test               # vitest suite (tools, permissions, sessions, sanitize, u
 npm run typecheck      # tsc --noEmit
 npm run build          # compile to dist/
 ```
-
-## Docker
-
-```bash
-docker build -t reagent .
-docker run --rm -it -v "$PWD:/workspace" -w /workspace --env-file .env -p 8787:8787 reagent
-# or: docker compose up --build
-```
-
-The image runs as a non-root user, binds `0.0.0.0:8787` inside the container
-(`REAGENT_BIND_HOST`), and exposes `/api/health` for health checks. Local
-`reagent serve` still defaults to `127.0.0.1` only.
 
 ## Switching LLM
 
@@ -237,8 +259,7 @@ reagent/
 │   └── config.ts       # env, config.json, working directory
 ├── static/             # built front served by the server (self-contained package)
 ├── ui/                 # React front-end source (Vite + React + Tailwind)
-├── test/               # vitest suite (mirrors the Python test names 1:1)
-└── docs/CONTRACTS.md   # module contracts, HTTP/SSE contract, config knobs
+└── test/               # vitest suite (mirrors the Python test names 1:1)
 ```
 
 The port mirrors the original Python backend module by module, then was refined
