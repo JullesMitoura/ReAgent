@@ -97,25 +97,41 @@ function* iterFiles(base: string): Generator<string> {
   }
 }
 
-/** Tool glob: matches fnmatch against the relative path OR the basename. */
+// Safety cap on how many matches are collected before sorting by mtime and
+// truncating to MAX_RESULTS; keeps a broad pattern (e.g. "*") from buffering
+// an unbounded list on a huge tree.
+const GLOB_COLLECT_CAP = 5_000;
+
+/**
+ * Tool glob: matches fnmatch against the relative path OR the basename,
+ * returned most-recently-modified first (mirrors Claude Code's Glob, which is
+ * commonly used to find "what changed most recently").
+ */
 export function globFiles(pattern: string): string {
-  const results: string[] = [];
+  const matches: { rel: string; mtimeMs: number }[] = [];
+  let truncatedScan = false;
   for (const p of iterFiles(config.root)) {
     const rel = path.relative(config.root, p);
     if (fnmatch(rel, pattern) || fnmatch(path.basename(p), pattern)) {
-      results.push(rel);
-      if (results.length >= MAX_RESULTS) {
-        results.push(`... (limit of ${MAX_RESULTS} results)`);
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(p).mtimeMs;
+      } catch {
+        // file vanished mid-walk; keep it, sorts as oldest
+      }
+      matches.push({ rel, mtimeMs });
+      if (matches.length >= GLOB_COLLECT_CAP) {
+        truncatedScan = true;
         break;
       }
     }
   }
-  const out = results
-    .slice(0, MAX_RESULTS)
-    .sort()
-    .concat(results.slice(MAX_RESULTS))
-    .join("\n");
-  return out || "(no files found)";
+  matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const out = matches.slice(0, MAX_RESULTS).map((m) => m.rel);
+  if (matches.length > MAX_RESULTS || truncatedScan) {
+    out.push(`... (limit of ${MAX_RESULTS} results)`);
+  }
+  return out.join("\n") || "(no files found)";
 }
 
 /** Tool grep: line-by-line regex over text files under ROOT. */

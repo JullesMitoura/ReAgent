@@ -38,7 +38,7 @@ function renderHighlighted(text: string) {
   for (const match of text.matchAll(ATTACHMENT_RE)) {
     const start = match.index ?? 0;
     if (start > last) nodes.push(text.slice(last, start));
-    nodes.push(<span key={key++} className="rounded bg-cyan-400/15 px-0.5 text-cyan-200">{match[0]}</span>);
+    nodes.push(<span key={key++} className="rounded bg-cyan-400/15 px-0.5 text-cyan-200 light:text-cyan-700">{match[0]}</span>);
     last = start + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
@@ -71,13 +71,17 @@ export function Chat({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior });
+  };
+
   // so rola sozinho quando o usuario ja esta perto do fim; se ele subiu para ler,
   // nao sequestra a rolagem
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (nearBottom) scrollToBottom();
   }, [messages]);
 
   // A altura acompanha o conteúdo até três linhas. O input antigo usava uma
@@ -128,6 +132,8 @@ export function Chat({
     setInput("");
     setFiles([]);
     onSend(trimmed);
+    // Sempre desce ao enviar — o usuario acabou de postar e espera ver a resposta.
+    requestAnimationFrame(() => scrollToBottom("smooth"));
   };
 
   const applyFile = (path: string) => {
@@ -206,7 +212,7 @@ export function Chat({
   if (busy) {
     const tail = items[items.length - 1];
     if (tail?.role === "assistant" && tail.streaming) {
-      // status só quando não há tokens fluindo (o cursor já sinaliza a geração)
+      // status só quando não há tokens fluindo (evita competir com o texto)
       if (!streamingAnswer) items[items.length - 1] = { ...tail, progress: liveLabel };
     } else {
       // turno recém-iniciado, ainda sem segmento: a bolha nasce aqui e os
@@ -221,35 +227,35 @@ export function Chat({
         <>
           {/* click-away: fecha o popover ao clicar fora do compositor */}
           <div className="fixed inset-0" aria-hidden="true" onClick={() => setShowMetrics(false)} />
-          <div className="glass absolute bottom-full right-0 z-10 mb-2 w-56 animate-fade-up rounded-xl p-3 shadow-2xl shadow-black/40">
+          <div className="glass absolute bottom-full right-0 z-10 mb-2 w-56 animate-fade-up rounded-xl p-3 shadow-2xl shadow-black/40 light:shadow-black/10">
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Session</span>
-              <span className="truncate font-mono text-[11px] text-cyan-300">{model}</span>
+              <span className="truncate font-mono text-[11px] text-cyan-300 light:text-cyan-700">{model}</span>
             </div>
             <dl className="space-y-1.5 font-mono text-[11px] tabular-nums">
               <div className="flex items-baseline justify-between">
                 <dt className="text-zinc-500">prompt</dt>
-                <dd className="text-zinc-300">{usage.promptTokens.toLocaleString("en-US")}</dd>
+                <dd className="text-zinc-300 light:text-zinc-700">{usage.promptTokens.toLocaleString("en-US")}</dd>
               </div>
               <div className="flex items-baseline justify-between">
                 <dt className="text-zinc-500">output</dt>
-                <dd className="text-zinc-300">{usage.completionTokens.toLocaleString("en-US")}</dd>
+                <dd className="text-zinc-300 light:text-zinc-700">{usage.completionTokens.toLocaleString("en-US")}</dd>
               </div>
               <div className="flex items-baseline justify-between">
                 <dt className="text-zinc-500">context</dt>
-                <dd className="text-zinc-300">{(usage.lastPromptTokens ?? 0).toLocaleString("en-US")}</dd>
+                <dd className="text-zinc-300 light:text-zinc-700">{(usage.lastPromptTokens ?? 0).toLocaleString("en-US")}</dd>
               </div>
               <div className="flex items-baseline justify-between">
                 <dt className="text-zinc-500">cached</dt>
-                <dd className="text-zinc-400">{(usage.cachedTokens ?? 0).toLocaleString("en-US")}</dd>
+                <dd className="text-zinc-400 light:text-zinc-600">{(usage.cachedTokens ?? 0).toLocaleString("en-US")}</dd>
               </div>
             </dl>
           </div>
         </>
       )}
       {files.length > 0 && (
-        <div className="glass absolute bottom-full left-0 right-0 z-10 mb-2 max-h-56 animate-fade-up overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/40">
-          <div className="mb-1 border-b border-white/5 px-2.5 pb-1.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+        <div className="glass absolute bottom-full left-0 right-0 z-10 mb-2 max-h-56 animate-fade-up overflow-y-auto rounded-xl p-1.5 shadow-2xl shadow-black/40 light:shadow-black/10">
+          <div className="mb-1 border-b border-white/5 light:border-zinc-900/10 px-2.5 pb-1.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
             Attach file
           </div>
           {files.map((f, i) => (
@@ -258,18 +264,18 @@ export function Chat({
               onClick={() => applyFile(f)}
               onMouseEnter={() => setFileIndex(i)}
               className={`block w-full rounded-lg px-2.5 py-1.5 text-left font-mono text-xs transition-colors duration-100 active:bg-cyan-500/25 ${
-                i === fileIndex ? "bg-cyan-500/15 text-cyan-300" : "text-zinc-300"
+                i === fileIndex ? "bg-cyan-500/15 text-cyan-300 light:text-cyan-700" : "text-zinc-300 light:text-zinc-700"
               }`}
             >
-              {f.endsWith("/") ? <span className="text-violet-400">{f}</span> : f}
+              {f.endsWith("/") ? <span className="text-violet-400 light:text-violet-700">{f}</span> : f}
             </button>
           ))}
         </div>
       )}
 
-      <div className="rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-2 transition-colors focus-within:border-cyan-400/60">
+      <div className="rounded-xl border border-white/10 light:border-zinc-900/10 bg-zinc-900/80 light:bg-white/90 px-3 py-2 transition-colors focus-within:border-cyan-400/60">
         {queuedMessages.length > 0 && (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-white/8 pb-2" aria-label="Queued messages">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 border-b border-white/8 light:border-zinc-900/10 pb-2" aria-label="Queued messages">
             <span className="font-mono text-[10px] uppercase tracking-wide text-zinc-500">Queued</span>
             {queuedMessages.map((message, index) => (
               <button
@@ -277,9 +283,9 @@ export function Chat({
                 type="button"
                 onClick={() => onRemoveQueued?.(index)}
                 title="Remove from queue"
-                className="max-w-44 truncate rounded bg-white/[0.06] px-2 py-1 text-left text-[11px] text-zinc-300 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                className="max-w-44 truncate rounded bg-white/[0.06] light:bg-zinc-900/[0.06] px-2 py-1 text-left text-[11px] text-zinc-300 light:text-zinc-700 transition-colors hover:bg-red-500/10 hover:text-red-300 light:hover:text-red-600"
               >
-                {message} <span className="text-zinc-600">×</span>
+                {message} <span className="text-zinc-600 light:text-zinc-400">×</span>
               </button>
             ))}
           </div>
@@ -289,7 +295,7 @@ export function Chat({
             <div
               ref={backdropRef}
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 max-h-[66px] overflow-hidden whitespace-pre-wrap break-words py-0.5 text-[15px] leading-[22px] text-zinc-100"
+              className="pointer-events-none absolute inset-0 max-h-[66px] overflow-hidden whitespace-pre-wrap break-words py-0.5 text-[15px] leading-[22px] text-zinc-100 light:text-zinc-900"
             >
               {renderHighlighted(input)}
             </div>
@@ -310,7 +316,7 @@ export function Chat({
               }
               disabled={busy && !canQueue}
               aria-label="Message ReAgent"
-              className="relative block max-h-[66px] w-full resize-none overflow-y-auto whitespace-pre-wrap break-words bg-transparent p-0 py-0.5 text-[15px] leading-[22px] text-transparent caret-cyan-300 outline-none placeholder:text-zinc-600 disabled:opacity-50"
+              className="relative block max-h-[66px] w-full resize-none overflow-y-auto whitespace-pre-wrap break-words bg-transparent p-0 py-0.5 text-[15px] leading-[22px] text-transparent caret-cyan-300 outline-none placeholder:text-zinc-600 light:placeholder:text-zinc-400 disabled:opacity-50"
             />
           </div>
           <button
@@ -319,8 +325,8 @@ export function Chat({
             aria-label="Session metrics"
             title="Session metrics"
             aria-expanded={showMetrics}
-            className={`grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 ${
-              showMetrics ? "text-cyan-300" : "text-zinc-500 hover:text-zinc-300"
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/5 light:hover:bg-zinc-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 ${
+              showMetrics ? "text-cyan-300 light:text-cyan-700" : "text-zinc-500 hover:text-zinc-300 light:hover:text-zinc-700"
             }`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
@@ -334,7 +340,7 @@ export function Chat({
               onClick={onStop}
               aria-label="stop"
               title="Stop the current turn"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-sm text-red-400 transition-colors hover:bg-red-500/10 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-sm text-red-400 light:text-red-600 transition-colors hover:bg-red-500/10 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
             >
               ■
             </button>
@@ -343,7 +349,7 @@ export function Chat({
               onClick={() => send(input)}
               disabled={busy || !input.trim()}
               aria-label="send"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-lg text-cyan-400 transition-colors hover:bg-cyan-400/10 hover:text-cyan-300 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-25"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-lg text-cyan-400 light:text-cyan-700 transition-colors hover:bg-cyan-400/10 hover:text-cyan-300 light:hover:text-cyan-600 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-25"
             >
               ↑
             </button>
@@ -357,8 +363,8 @@ export function Chat({
     <main className="glass flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl">
       {configErrors.length > 0 && (
         <div className="shrink-0 border-b border-amber-400/20 bg-amber-400/[0.06] px-6 py-2.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-300">Configuration</span>
-          <span className="ml-2 text-xs text-amber-100/80">{configErrors[0]}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-300 light:text-amber-700">Configuration</span>
+          <span className="ml-2 text-xs text-amber-100/80 light:text-amber-800">{configErrors[0]}</span>
         </div>
       )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
@@ -367,7 +373,7 @@ export function Chat({
             <Orb className="h-16 w-16" reaction />
             <div>
               {/* titulo com leve gradiente na propria tipografia */}
-              <p className="bg-gradient-to-br from-zinc-50 via-cyan-100/90 to-violet-200/80 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
+              <p className="bg-gradient-to-br from-zinc-50 via-cyan-100/90 to-violet-200/80 light:from-zinc-800 light:via-cyan-700 light:to-violet-700 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
                 What are we building today?
               </p>
               {!live && (

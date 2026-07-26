@@ -42,7 +42,9 @@ export function getTodos(): TodoItem[] {
 export function render(todos?: TodoItem[] | null): string {
   const items = todos == null ? TODOS : todos;
   if (!items.length) return "(no tasks)";
-  return items.map((t) => `${ICONS[t.status]} ${t.content}`).join("\n");
+  return items
+    .map((t) => `${ICONS[t.status]} ${t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}`)
+    .join("\n");
 }
 
 export function todoWrite(todos: TodoItem[]): string {

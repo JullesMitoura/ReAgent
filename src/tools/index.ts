@@ -384,7 +384,8 @@ export const TOOL_SCHEMAS: object[] = [
         "exactly ONE item in_progress at a time (mark it BEFORE starting work) and mark items " +
         "completed IMMEDIATELY after finishing each one — never batch completions. Only mark " +
         "completed when fully done; if blocked or tests fail, keep it in_progress and add a " +
-        "new item for what must be resolved.",
+        "new item for what must be resolved. content is the imperative form (\"Run tests\"); " +
+        "activeForm is the present-continuous form (\"Running tests\") shown while in_progress.",
       parameters: {
         type: "object",
         properties: {
@@ -395,6 +396,7 @@ export const TOOL_SCHEMAS: object[] = [
               properties: {
                 content: { type: "string" },
                 status: { type: "string", enum: ["pending", "in_progress", "completed"] },
+                activeForm: { type: "string" },
               },
               required: ["content", "status"],
             },

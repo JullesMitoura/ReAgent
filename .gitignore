@@ -21,6 +21,3 @@ refs/
 .env
 .env.local
 .env.production
-
-# vendored reference material (not part of the shipped product)
-others/

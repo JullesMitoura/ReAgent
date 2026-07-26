@@ -66,19 +66,19 @@ function ActivityDetail({ tool }: { tool: ToolMsg }) {
   const argsText = formatArgs(tool.args);
   const result = tool.result?.trim() ?? "";
   return (
-    <div className="mt-1 mb-1.5 space-y-1.5 rounded-md border border-white/[0.06] bg-zinc-950/60 px-2 py-1.5">
-      <div className="font-mono text-[9px] uppercase tracking-wider text-zinc-600">{tool.name}</div>
+    <div className="mt-1 mb-1.5 space-y-1.5 rounded-md border border-white/[0.06] light:border-zinc-900/[0.08] bg-zinc-950/60 light:bg-zinc-100 px-2 py-1.5">
+      <div className="font-mono text-[9px] uppercase tracking-wider text-zinc-600 light:text-zinc-400">{tool.name}</div>
       <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-zinc-500">
         {argsText}
       </pre>
       {tool.status === "running" ? (
-        <div className="font-mono text-[10px] text-cyan-500/80">running…</div>
+        <div className="font-mono text-[10px] text-cyan-500/80 light:text-cyan-700">running…</div>
       ) : result ? (
-        <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words border-t border-white/[0.04] pt-1.5 font-mono text-[10px] leading-snug text-zinc-400">
+        <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words border-t border-white/[0.04] light:border-zinc-900/[0.06] pt-1.5 font-mono text-[10px] leading-snug text-zinc-400 light:text-zinc-600">
           {result}
         </pre>
       ) : (
-        <div className="font-mono text-[10px] text-zinc-600">no output</div>
+        <div className="font-mono text-[10px] text-zinc-600 light:text-zinc-400">no output</div>
       )}
     </div>
   );
@@ -99,31 +99,35 @@ function ActivityRow({
 }) {
   const verb = toolActionLabel(name, !running);
   return (
-    <li className={`rounded-md ${running && !open ? "bg-cyan-400/[0.06]" : ""} ${open ? "bg-white/[0.03]" : ""}`}>
+    <li
+      className={`rounded-md ${running && !open ? "bg-cyan-400/[0.06]" : ""} ${open ? "bg-white/[0.03] light:bg-zinc-900/[0.03]" : ""}`}
+    >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white/[0.03] ${
+        className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white/[0.03] light:hover:bg-zinc-900/[0.03] ${
           running && open ? "bg-cyan-400/[0.06]" : ""
         }`}
         title={`${name}${item.target ? ` · ${item.target}` : ""} — click for details`}
       >
         <span
-          className={`h-1 w-1 shrink-0 rounded-full ${running ? "animate-pulse bg-cyan-400" : "bg-zinc-600"}`}
+          className={`h-1 w-1 shrink-0 rounded-full ${running ? "animate-pulse bg-cyan-400" : "bg-zinc-600 light:bg-zinc-300"}`}
           aria-hidden
         />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-tight">
-          <span className={running ? "text-zinc-400" : "text-zinc-500"}>{verb}</span>
+          <span className={running ? "text-zinc-400 light:text-zinc-600" : "text-zinc-500"}>{verb}</span>
           {item.target ? (
             <>
-              <span className="text-zinc-700"> · </span>
-              <span className={running ? "text-zinc-200" : "text-zinc-400"}>{pathLeaf(item.target)}</span>
+              <span className="text-zinc-700 light:text-zinc-300"> · </span>
+              <span className={running ? "text-zinc-200 light:text-zinc-800" : "text-zinc-400 light:text-zinc-600"}>
+                {pathLeaf(item.target)}
+              </span>
             </>
           ) : null}
         </span>
         <span
-          className={`shrink-0 text-[9px] text-zinc-600 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`shrink-0 text-[9px] text-zinc-600 light:text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
           aria-hidden
         >
           ▸
@@ -154,7 +158,7 @@ function ActivityFeed({ tools }: { tools: ToolMsg[] }) {
     <section className="mt-5">
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Activity</h3>
-        <span className="font-mono text-[10px] tabular-nums text-zinc-600">{total}</span>
+        <span className="font-mono text-[10px] tabular-nums text-zinc-600 light:text-zinc-400">{total}</span>
       </div>
       <ul className="activity-feed max-h-72 space-y-0.5 overflow-y-auto pr-0.5">
         {groups.map((g) => {
@@ -184,24 +188,24 @@ function ActivityFeed({ tools }: { tools: ToolMsg[] }) {
                 type="button"
                 onClick={() => setOpenGroupKey((prev) => (prev === groupKey ? null : groupKey))}
                 aria-expanded={groupOpen}
-                className="flex w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white/[0.03]"
+                className="flex w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-white/[0.03] light:hover:bg-zinc-900/[0.03]"
               >
-                <span className="h-1 w-1 shrink-0 rounded-full bg-zinc-600" aria-hidden />
+                <span className="h-1 w-1 shrink-0 rounded-full bg-zinc-600 light:bg-zinc-300" aria-hidden />
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-tight">
                   <span className="text-zinc-500">{verb}</span>
-                  <span className="text-zinc-700"> · </span>
-                  <span className="text-zinc-400">
+                  <span className="text-zinc-700 light:text-zinc-300"> · </span>
+                  <span className="text-zinc-400 light:text-zinc-600">
                     {g.items.length} {groupNoun(g.name, g.items.length)}
                   </span>
                 </span>
                 <span
-                  className={`shrink-0 text-[9px] text-zinc-600 transition-transform ${groupOpen ? "rotate-90" : ""}`}
+                  className={`shrink-0 text-[9px] text-zinc-600 light:text-zinc-400 transition-transform ${groupOpen ? "rotate-90" : ""}`}
                 >
                   ▸
                 </span>
               </button>
               {groupOpen ? (
-                <ul className="mb-1 ml-[11px] space-y-0.5 border-l border-white/[0.06] pl-1.5">
+                <ul className="mb-1 ml-[11px] space-y-0.5 border-l border-white/[0.06] light:border-zinc-900/[0.08] pl-1.5">
                   {[...g.items].reverse().map((item) => {
                     const itemRunning = item.tool.status === "running";
                     return (
@@ -253,21 +257,25 @@ function TodoNode({
         live ? "animate-fade-up" : ""
       } ${isActive ? "bg-cyan-400/[0.06] ring-1 ring-inset ring-cyan-400/10" : ""}`}
     >
-      {connectUp && <span aria-hidden="true" className={`absolute ${SPINE_LEFT} top-0 h-2 w-px bg-white/10`} />}
-      {connectDown && <span aria-hidden="true" className={`absolute ${SPINE_LEFT} bottom-0 top-6 w-px bg-white/10`} />}
+      {connectUp && (
+        <span aria-hidden="true" className={`absolute ${SPINE_LEFT} top-0 h-2 w-px bg-white/10 light:bg-zinc-900/10`} />
+      )}
+      {connectDown && (
+        <span aria-hidden="true" className={`absolute ${SPINE_LEFT} bottom-0 top-6 w-px bg-white/10 light:bg-zinc-900/10`} />
+      )}
       <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center">
         {isDone ? (
           <span
-            className={`grid h-4 w-4 place-items-center rounded-full bg-emerald-500/20 text-[10px] text-emerald-400 ring-1 ring-inset ring-emerald-400/30 ${
+            className={`grid h-4 w-4 place-items-center rounded-full bg-emerald-500/20 light:bg-emerald-500/15 text-[10px] text-emerald-400 light:text-emerald-700 ring-1 ring-inset ring-emerald-400/30 light:ring-emerald-600/30 ${
               live ? "animate-pop-in" : ""
             }`}
           >
             ✓
           </span>
         ) : isActive ? (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-zinc-600 border-t-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.35)]" />
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-zinc-600 light:border-zinc-300 border-t-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.35)]" />
         ) : (
-          <span className="grid h-4 w-4 place-items-center rounded-full border border-zinc-700/80 text-transparent transition-colors duration-300">
+          <span className="grid h-4 w-4 place-items-center rounded-full border border-zinc-700/80 light:border-zinc-300 text-transparent transition-colors duration-300">
             ·
           </span>
         )}
@@ -275,13 +283,13 @@ function TodoNode({
       <span
         className={`transition-colors duration-300 ${
           isDone
-            ? "text-zinc-500 line-through decoration-zinc-600"
+            ? "text-zinc-500 line-through decoration-zinc-600 light:decoration-zinc-400"
             : isActive
-              ? "text-zinc-100"
-              : "text-zinc-400"
+              ? "text-zinc-100 light:text-zinc-900"
+              : "text-zinc-400 light:text-zinc-600"
         }`}
       >
-        {todo.content}
+        {isActive && todo.activeForm ? todo.activeForm : todo.content}
       </span>
     </li>
   );
@@ -289,17 +297,19 @@ function TodoNode({
 
 function BranchIcon({ status }: { status: AgentBranchStatus }) {
   if (status === "running") {
-    return <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-zinc-600 border-t-cyan-400" />;
+    return (
+      <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-zinc-600 light:border-zinc-300 border-t-cyan-400" />
+    );
   }
   if (status === "done") {
     return (
-      <span className="grid h-3.5 w-3.5 shrink-0 animate-pop-in place-items-center rounded-full bg-emerald-500/20 text-[9px] text-emerald-400 ring-1 ring-inset ring-emerald-400/30">
+      <span className="grid h-3.5 w-3.5 shrink-0 animate-pop-in place-items-center rounded-full bg-emerald-500/20 light:bg-emerald-500/15 text-[9px] text-emerald-400 light:text-emerald-700 ring-1 ring-inset ring-emerald-400/30 light:ring-emerald-600/30">
         ✓
       </span>
     );
   }
   return (
-    <span className="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-red-500/20 text-[9px] text-red-400 ring-1 ring-inset ring-red-400/30">
+    <span className="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-red-500/20 light:bg-red-500/15 text-[9px] text-red-400 light:text-red-700 ring-1 ring-inset ring-red-400/30 light:ring-red-600/30">
       ✕
     </span>
   );
@@ -336,12 +346,12 @@ function BranchCard({ branch }: { branch: AgentBranch }) {
       ? "bg-cyan-400/[0.05] ring-cyan-400/25 shadow-[0_0_10px_rgba(34,211,238,0.12)]"
       : branch.status === "error"
         ? "bg-red-500/[0.06] ring-red-400/25"
-        : "bg-white/[0.03] ring-white/10";
+        : "bg-white/[0.03] ring-white/10 light:bg-zinc-900/[0.03] light:ring-zinc-900/10";
   return (
     <div className={`min-w-0 rounded-lg p-1.5 ring-1 ring-inset transition-colors duration-300 ${tone}`}>
       <div className="flex items-center gap-1.5">
         <BranchIcon status={branch.status} />
-        <span className="min-w-0 truncate text-[11px] leading-tight text-zinc-300" title={branch.title}>
+        <span className="min-w-0 truncate text-[11px] leading-tight text-zinc-300 light:text-zinc-700" title={branch.title}>
           {branch.title}
         </span>
       </div>
@@ -375,7 +385,7 @@ function ForkPaths({ branches, join, gradId }: { branches: AgentBranch[]; join: 
             key={b.id}
             d={d}
             fill="none"
-            stroke={b.status === "running" ? `url(#${gradId})` : "rgb(255 255 255 / 0.12)"}
+            stroke={b.status === "running" ? `url(#${gradId})` : "var(--fork-idle-stroke)"}
             strokeWidth={1.2}
             vectorEffect="non-scaling-stroke"
           />
@@ -399,7 +409,9 @@ function ForkSection({ branches }: { branches: AgentBranch[] }) {
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" />
           {branches.length} agents in parallel
           {running > 0 && (
-            <span className="font-normal normal-case tracking-normal text-zinc-600">· {running} running</span>
+            <span className="font-normal normal-case tracking-normal text-zinc-600 light:text-zinc-400">
+              · {running} running
+            </span>
           )}
         </div>
         <div className="grid grid-cols-2 gap-1.5">
@@ -477,12 +489,12 @@ export function TodoPanel({
         </div>
 
         {todos.length > 0 && (
-          <div className="mb-4 h-1.5 rounded-full bg-zinc-900/70 ring-1 ring-inset ring-white/10">
+          <div className="mb-4 h-1.5 rounded-full bg-zinc-900/70 light:bg-zinc-200/70 ring-1 ring-inset ring-white/10 light:ring-zinc-900/10">
             <div
               className={`h-full rounded-full ${
                 live
                   ? "bg-gradient-to-r from-cyan-400 to-violet-500 shadow-[0_0_10px_rgba(34,211,238,0.35)] transition-all duration-700 ease-out"
-                  : "bg-zinc-600"
+                  : "bg-zinc-600 light:bg-zinc-300"
               }`}
               style={{ width: `${pct}%` }}
             />
@@ -516,7 +528,7 @@ export function TodoPanel({
               {changedFiles.map((file) => (
                 <div
                   key={file}
-                  className="truncate rounded-md px-1.5 py-1 font-mono text-[11px] text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-300"
+                  className="truncate rounded-md px-1.5 py-1 font-mono text-[11px] text-zinc-400 light:text-zinc-600 hover:bg-white/[0.03] light:hover:bg-zinc-900/[0.03] hover:text-zinc-300 light:hover:text-zinc-700"
                   title={file}
                 >
                   {pathLeaf(file)}

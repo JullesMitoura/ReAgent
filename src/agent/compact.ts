@@ -196,7 +196,11 @@ function recordSummarizeFailure(session: Session): void {
 }
 
 /** Summarizes the history to free context, preserving the essentials. */
-export async function compactSession(session: Session, _emit?: EmitFn | null): Promise<void> {
+export async function compactSession(
+  session: Session,
+  _emit?: EmitFn | null,
+  customInstructions?: string,
+): Promise<void> {
   try {
     runPreCompactHooks();
   } catch {
@@ -231,10 +235,13 @@ export async function compactSession(session: Session, _emit?: EmitFn | null): P
   let hardTruncated = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     const head = truncateToolOutputs(headMsgs, SUMMARY_TOOL_OUTPUT_MAX);
+    const template = customInstructions?.trim()
+      ? `${SUMMARY_TEMPLATE}\n\nAdditional instructions from the user for this summary, follow them on top of the sections above: ${customInstructions.trim()}`
+      : SUMMARY_TEMPLATE;
     const request: ChatMessage[] = [
       { role: "system", content: SUMMARY_SYSTEM },
       ...head,
-      { role: "user", content: SUMMARY_TEMPLATE },
+      { role: "user", content: template },
     ];
     const { signal, dispose } = cancelSignal(currentTurn());
     try {

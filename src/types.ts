@@ -13,6 +13,8 @@ export type TodoStatus = "pending" | "in_progress" | "completed";
 export interface TodoItem {
   content: string;
   status: TodoStatus;
+  /** Present-continuous form ("Running tests"), shown in place of `content` while in_progress. */
+  activeForm?: string;
 }
 
 // --- permissions and questions -----------------------------------------------

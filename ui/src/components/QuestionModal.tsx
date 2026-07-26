@@ -118,14 +118,14 @@ export function QuestionModal({ request, onAnswer }: Props) {
           onClick={close}
           aria-label="Close"
           title="Close (Esc)"
-          className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+          className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 light:hover:bg-zinc-900/5 hover:text-zinc-300 light:hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
         >
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
             <path d="M5 5l10 10M15 5L5 15" />
           </svg>
         </button>
         <div className="mb-4 flex items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-400 ring-1 ring-inset ring-violet-500/20">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-400 light:text-violet-700 ring-1 ring-inset ring-violet-500/20 light:ring-violet-600/25">
             {/* Icone decorativo de pergunta. */}
             <svg
               viewBox="0 0 20 20"
@@ -142,8 +142,8 @@ export function QuestionModal({ request, onAnswer }: Props) {
             </svg>
           </div>
           <div className="min-w-0 pr-6">
-            <h2 id="question-modal-title" className="text-sm font-semibold text-zinc-100">The agent has a question</h2>
-            <p className="mt-1 text-sm text-zinc-300">{request.question}</p>
+            <h2 id="question-modal-title" className="text-sm font-semibold text-zinc-100 light:text-zinc-900">The agent has a question</h2>
+            <p className="mt-1 text-sm text-zinc-300 light:text-zinc-700">{request.question}</p>
           </div>
         </div>
 
@@ -153,7 +153,7 @@ export function QuestionModal({ request, onAnswer }: Props) {
               <button
                 key={opt}
                 onClick={() => onAnswer(opt)}
-                className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2 text-sm text-zinc-200 transition-all duration-200 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60 active:scale-95"
+                className="rounded-xl border border-white/10 light:border-zinc-900/10 bg-white/[0.02] light:bg-zinc-900/[0.02] px-4 py-2 text-sm text-zinc-200 light:text-zinc-800 transition-all duration-200 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-300 light:hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60 active:scale-95"
               >
                 {opt}
               </button>
@@ -164,8 +164,8 @@ export function QuestionModal({ request, onAnswer }: Props) {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             {files.length > 0 && (
-              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-56 animate-fade-up overflow-y-auto rounded-xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50">
-                <div className="mb-1 border-b border-white/5 px-2.5 pb-1.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
+              <div className="absolute bottom-full left-0 right-0 z-10 mb-2 max-h-56 animate-fade-up overflow-y-auto rounded-xl border border-white/10 light:border-zinc-900/10 bg-zinc-900 light:bg-white p-1.5 shadow-2xl shadow-black/50 light:shadow-black/10">
+                <div className="mb-1 border-b border-white/5 light:border-zinc-900/10 px-2.5 pb-1.5 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
                   Attach file
                 </div>
                 {files.map((f, i) => (
@@ -174,10 +174,10 @@ export function QuestionModal({ request, onAnswer }: Props) {
                     onClick={() => applyFile(f)}
                     onMouseEnter={() => setFileIndex(i)}
                     className={`block w-full rounded-lg px-2.5 py-1.5 text-left font-mono text-xs transition-colors duration-100 active:bg-cyan-500/25 ${
-                      i === fileIndex ? "bg-cyan-500/15 text-cyan-300" : "text-zinc-300"
+                      i === fileIndex ? "bg-cyan-500/15 text-cyan-300 light:text-cyan-700" : "text-zinc-300 light:text-zinc-700"
                     }`}
                   >
-                    {f.endsWith("/") ? <span className="text-violet-400">{f}</span> : f}
+                    {f.endsWith("/") ? <span className="text-violet-400 light:text-violet-700">{f}</span> : f}
                   </button>
                 ))}
               </div>
@@ -189,13 +189,13 @@ export function QuestionModal({ request, onAnswer }: Props) {
               onKeyDown={onInputKeyDown}
               placeholder="type an answer, or @ to reference a file…"
               aria-label="free answer"
-              className="w-full rounded-xl bg-white/5 px-4 py-2.5 text-sm text-zinc-100 outline-none ring-1 ring-white/10 transition-all duration-200 placeholder:text-zinc-600 focus:bg-white/[0.07] focus:ring-violet-500/40"
+              className="w-full rounded-xl bg-white/5 light:bg-zinc-900/5 px-4 py-2.5 text-sm text-zinc-100 light:text-zinc-900 outline-none ring-1 ring-white/10 light:ring-zinc-900/10 transition-all duration-200 placeholder:text-zinc-600 light:placeholder:text-zinc-400 focus:bg-white/[0.07] light:focus:bg-zinc-900/[0.07] focus:ring-violet-500/40"
             />
           </div>
           <button
             onClick={submit}
             disabled={!text.trim()}
-            className="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-violet-500/10 transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(167,139,250,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:scale-100 disabled:hover:shadow-none"
+            className="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-violet-500/10 transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(167,139,250,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 light:focus-visible:ring-offset-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:scale-100 disabled:hover:shadow-none"
           >
             Answer
           </button>

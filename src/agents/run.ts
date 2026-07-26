@@ -30,6 +30,21 @@ export type { RunAgentOptions } from "./types.js";
 
 const log = getLogger("agents.run");
 
+// Tool names that mutate the working tree; an agent offering any of these
+// writes directly into the shared checkout unless isolated.
+const WRITE_TOOL_NAMES = new Set([
+  "write_file",
+  "edit_file",
+  "multi_edit",
+  "delete_file",
+  "apply_patch",
+  "bash",
+]);
+
+function isWriteCapable(def: AgentDefinition): boolean {
+  return def.tools.some((t) => WRITE_TOOL_NAMES.has(t));
+}
+
 // Bounds how many `agent(background=true)` calls actually execute at once.
 // Without this, background dispatch fires an un-awaited async IIFE per call
 // (see runAgent below) and every requested background agent starts
@@ -117,7 +132,8 @@ async function runAgentSync(opts: RunAgentOptions): Promise<string> {
   if (
     opts.cwd ||
     def.isolation === "worktree" ||
-    (config.worktreeAgents && opts.agentType === "worker")
+    (config.worktreeAgents &&
+      (opts.agentType === "worker" || (opts.background && isWriteCapable(def))))
   ) {
     worktree = opts.cwd
       ? { path: opts.cwd, branch: "(cwd)", cleanup: () => undefined }
@@ -161,7 +177,9 @@ async function runAgentSync(opts: RunAgentOptions): Promise<string> {
     {
       role: "user",
       content: worktree
-        ? `${opts.prompt}\n\n[Isolated worktree cwd: ${worktree.path} — tools resolve relative to this tree.]`
+        ? `${opts.prompt}\n\n[Isolated worktree cwd: ${worktree.path} — tools resolve relative to this tree, ` +
+          `not the main working directory. Changes here do not affect the main checkout while you work; ` +
+          `they are picked up through your final report and the worktree is cleaned up automatically afterward.]`
         : opts.prompt,
     },
   ];

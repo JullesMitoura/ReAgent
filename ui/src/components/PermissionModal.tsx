@@ -27,17 +27,17 @@ function classifyDiffLine(line: string): DiffLineKind {
 
 const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
   header: "text-zinc-500",
-  hunk: "text-cyan-400",
-  add: "bg-emerald-500/10 text-emerald-400",
-  remove: "bg-red-500/10 text-red-400",
-  context: "text-zinc-400",
+  hunk: "text-cyan-400 light:text-cyan-700",
+  add: "bg-emerald-500/10 text-emerald-400 light:text-emerald-700",
+  remove: "bg-red-500/10 text-red-400 light:text-red-700",
+  context: "text-zinc-400 light:text-zinc-600",
   other: "italic text-zinc-500",
 };
 
 /** Diff-style preview: every line colored by its unified-diff prefix. */
 function DiffPreview({ text }: { text: string }) {
   return (
-    <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-white/10 bg-zinc-950/60 p-3 font-mono text-xs leading-relaxed">
+    <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-white/10 light:border-zinc-900/10 bg-zinc-950/60 light:bg-zinc-100 p-3 font-mono text-xs leading-relaxed">
       {text.split("\n").map((line, i) => (
         <div key={i} className={DIFF_LINE_CLASS[classifyDiffLine(line)]}>
           {line || " "}
@@ -94,22 +94,22 @@ export function PermissionModal({ request, onAnswer }: Props) {
         aria-modal="true"
         aria-labelledby="permission-modal-title"
         onKeyDown={handleKeyDown}
-        className="w-full max-w-lg rounded-lg border border-white/10 bg-zinc-900 p-5 shadow-xl"
+        className="w-full max-w-lg rounded-lg border border-white/10 light:border-zinc-900/10 bg-zinc-900 light:bg-white p-5 shadow-xl"
       >
         <div className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 id="permission-modal-title" className="text-sm font-medium text-zinc-100">
+          <h2 id="permission-modal-title" className="text-sm font-medium text-zinc-100 light:text-zinc-900">
             Permission required
           </h2>
           <span
             className={`font-mono text-[11px] uppercase tracking-wide ${
-              danger ? "text-red-400" : "text-zinc-500"
+              danger ? "text-red-400 light:text-red-600" : "text-zinc-500"
             }`}
           >
             {request.kind}
           </span>
         </div>
 
-        <p className="rounded-md border border-white/5 bg-zinc-950/60 px-3 py-2 font-mono text-[13px] text-zinc-300">
+        <p className="rounded-md border border-white/5 light:border-zinc-900/10 bg-zinc-950/60 light:bg-zinc-100 px-3 py-2 font-mono text-[13px] text-zinc-300 light:text-zinc-700">
           {request.action}
         </p>
         {request.preview && <DiffPreview text={request.preview} />}
@@ -117,7 +117,7 @@ export function PermissionModal({ request, onAnswer }: Props) {
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
             onClick={() => onAnswer("deny")}
-            className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500/50"
+            className="rounded-md px-3 py-1.5 text-sm text-zinc-400 light:text-zinc-600 transition-colors hover:bg-red-500/10 hover:text-red-300 light:hover:text-red-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500/50"
           >
             Deny
           </button>
@@ -125,23 +125,23 @@ export function PermissionModal({ request, onAnswer }: Props) {
             <>
               <button
                 onClick={() => onAnswer("session")}
-                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 light:text-zinc-600 transition-colors hover:bg-white/5 light:hover:bg-zinc-900/5 hover:text-zinc-200 light:hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                 title="Allow matching actions until this session ends (not saved to disk)"
               >
                 Allow for session
               </button>
               <button
                 onClick={() => onAnswer("always")}
-                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                className="rounded-md px-3 py-1.5 text-sm text-zinc-400 light:text-zinc-600 transition-colors hover:bg-white/5 light:hover:bg-zinc-900/5 hover:text-zinc-200 light:hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
               >
-                Always allow <span className="font-mono text-cyan-400">{request.suggestion}</span>
+                Always allow <span className="font-mono text-cyan-400 light:text-cyan-700">{request.suggestion}</span>
               </button>
             </>
           ) : null}
           <button
             ref={primaryRef}
             onClick={() => onAnswer("once")}
-            className="rounded-md bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="rounded-md bg-zinc-100 light:bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-900 light:text-zinc-50 transition-colors hover:bg-white light:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 light:focus-visible:ring-zinc-900/30"
           >
             Allow once
           </button>

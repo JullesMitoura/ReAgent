@@ -83,7 +83,8 @@ describe("system-prompt", () => {
     expect(p).toContain("Before declaring done");
     expect(p).toContain("Today's date");
     expect(p).toContain(os.type()); // Node equivalent of platform.system()
-    expect(p).toContain("Shell: bash");
+    expect(p).toMatch(/Shell: \S+/); // detected from $SHELL, not hard-coded
+    expect(p).toContain("Is directory a git repo: No"); // tmp root is not a repo
   });
 
   it.each([true, false])("test_system_prompt_approval_text_follows_config[%s]", (auto) => {

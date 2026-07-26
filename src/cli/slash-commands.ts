@@ -23,7 +23,7 @@ import { hooksConfigured } from "../hooks/runner.js";
 import { parsePermissionMode, PERMISSION_MODES } from "../modes.js";
 import * as projectContext from "../project-context.js";
 import { Session } from "../session.js";
-import { listSkillCatalog } from "../skills/load.js";
+import { listSkillCatalog, loadSkill, userInvocableSkills } from "../skills/load.js";
 import { allAgents } from "../agents/run.js";
 import { activeSchemas } from "../tools/index.js";
 import { render as renderTodos } from "../tools/todo.js";
@@ -61,7 +61,7 @@ export const HELP = `${c.bold("Commands:")}
   /undo              revert file changes made by the last turn
   /init              analyze the project and generate AGENTS.md
   /context           show the auto-generated project map (/context refresh to rebuild)
-  /compact           summarize the history to free up context
+  /compact [instructions]  summarize the history to free up context (optionally steer what to keep)
   /todos             show the agent's task list
   /usage             tokens consumed in this session
   /tools             available tools
@@ -278,7 +278,7 @@ export async function handleCommand(cmd: string, agent: Agent, ui: ReplUI): Prom
 
   if (name === "/compact") {
     ui.print(c.dim("compacting context..."));
-    await agent.compact();
+    await agent.compact(null, arg.trim() || undefined);
     return agent;
   }
 
@@ -424,6 +424,17 @@ export async function handleCommand(cmd: string, agent: Agent, ui: ReplUI): Prom
     await ui.runTurn(agent, expand(prompt));
     return agent;
   }
+
+  // fallback: skills marked user-invocable (.reagent/skills/*/SKILL.md)
+  const skillName = name.slice(1);
+  if (userInvocableSkills().some((s) => s.name === skillName)) {
+    const skill = loadSkill(skillName);
+    if (skill) {
+      await ui.runTurn(agent, expand(skill.body));
+      return agent;
+    }
+  }
+
   ui.print(c.red(`Unknown command: ${name}`) + " (try /help)");
   return agent;
 }

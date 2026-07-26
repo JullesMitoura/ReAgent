@@ -47,6 +47,28 @@ function todayIso(): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Real login shell (basename of $SHELL), falling back to a platform default. */
+function shellName(): string {
+  const shell = process.env["SHELL"];
+  if (shell) return path.basename(shell);
+  return process.platform === "win32" ? "cmd.exe" : "bash";
+}
+
+/** Whether config.root is inside a git working tree. */
+function isGitRepo(): boolean {
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: config.root,
+      encoding: "utf8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function sandboxRules(): string {
   const lines: string[] = [SANDBOX_HEADER];
   if (available()) {
@@ -93,7 +115,10 @@ function gitStatusSnippet(): string {
     const trimmed = out.trim();
     if (!trimmed) return "";
     const lines = trimmed.split("\n").slice(0, 40);
-    return `\nGit status (capped):\n${lines.join("\n")}\n`;
+    return (
+      `\nGit status (capped): this is the state at the start of the conversation, ` +
+      `a point-in-time snapshot that will not update as the conversation continues.\n${lines.join("\n")}\n`
+    );
   } catch {
     return "";
   }
@@ -187,8 +212,9 @@ export function composeSystemPrompt(): string {
     `You are ReAgent, a coding agent running in the user's terminal.\n` +
     `\n` +
     `Working directory: ${config.root}\n` +
+    `Is directory a git repo: ${isGitRepo() ? "Yes" : "No"}\n` +
     `Platform: ${os.type()} ${os.release()} (${os.machine()})\n` +
-    `Shell: bash\n` +
+    `Shell: ${shellName()}\n` +
     `Today's date: ${todayIso()}\n` +
     `\n` +
     `Rules:\n` +

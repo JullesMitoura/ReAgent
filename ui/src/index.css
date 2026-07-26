@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* Tema claro sob demanda: light:* só se aplica dentro de <html class="light">
+   (alternado pelo useTheme hook). Sem a classe, o app permanece no escuro de sempre. */
+@custom-variant light (&:where(.light, .light *));
+
+:root {
+  color-scheme: dark;
+  /* traço "ocioso" do grafo de agentes (ForkPaths); só isso pois é um atributo
+     SVG (stroke), fora do alcance das classes utilitárias light:* */
+  --fork-idle-stroke: rgb(255 255 255 / 0.12);
+}
+.light {
+  color-scheme: light;
+  --fork-idle-stroke: rgb(9 9 11 / 0.14);
+}
+
 @theme {
   --animate-fade-up: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-pop-in: pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -106,12 +121,25 @@ body {
     #09090b;
   background-attachment: fixed;
   color: #e4e4e7;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.light body {
+  background:
+    radial-gradient(1100px 550px at 12% -8%, rgba(8, 145, 178, 0.06), transparent 60%),
+    radial-gradient(900px 550px at 108% 112%, rgba(124, 58, 237, 0.05), transparent 60%),
+    radial-gradient(1400px 700px at 50% 115%, rgba(99, 102, 241, 0.04), transparent 65%),
+    #fafafa;
+  color: #27272a;
 }
 
 /* selecao de texto com o acento ciano da UI */
 ::selection {
   background: rgba(34, 211, 238, 0.28);
   color: #f0fdff;
+}
+.light ::selection {
+  background: rgba(8, 145, 178, 0.2);
+  color: #083344;
 }
 
 /* Painel de vidro fosco usado em toda a UI: highlight interno no topo e sombra ambiente */
@@ -123,6 +151,13 @@ body {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 8px 30px rgba(0, 0, 0, 0.25);
+}
+.light .glass {
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(9, 9, 11, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 8px 30px rgba(24, 24, 27, 0.08);
 }
 
 .typing-dot {
@@ -308,6 +343,9 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #3f3f46 transparent;
 }
+.light * {
+  scrollbar-color: #d4d4d8 transparent;
+}
 
 /* scrollbar webkit no mesmo tom discreto do resto da UI */
 ::-webkit-scrollbar {
@@ -323,8 +361,18 @@ body {
   border: 2px solid transparent;
   border-radius: 8px;
 }
+.light ::-webkit-scrollbar-thumb {
+  background: rgba(212, 212, 216, 0.9);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(82, 82, 91, 0.9);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.9);
   background-clip: padding-box;
   border: 2px solid transparent;
 }
@@ -522,6 +570,97 @@ body {
 }
 .markdown .task-list-item input {
   margin-right: 0.5rem;
+}
+
+/* Markdown/hljs no tema claro: mesmas regras acima, cores recalibradas para
+   contraste sobre fundo branco (os tons pastel do escuro somem no claro). */
+.light .markdown h1,
+.light .markdown h2,
+.light .markdown h3,
+.light .markdown strong,
+.light .markdown th {
+  color: #18181b;
+}
+.light .markdown code {
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.18);
+  color: #0e7490;
+}
+.light .markdown pre {
+  background: rgba(244, 244, 245, 0.9);
+  border: 1px solid rgba(9, 9, 11, 0.08);
+}
+.light .markdown pre code {
+  color: #3f3f46;
+}
+.light .markdown a {
+  color: #0891b2;
+  text-decoration-color: rgba(8, 145, 178, 0.4);
+}
+.light .markdown a:hover {
+  color: #0e7490;
+}
+.light .markdown hr {
+  background: linear-gradient(90deg, transparent, rgba(9, 9, 11, 0.14), transparent);
+}
+.light .markdown th,
+.light .markdown td {
+  border: 1px solid rgba(9, 9, 11, 0.1);
+}
+.light .markdown th {
+  background: rgba(9, 9, 11, 0.04);
+}
+.light .markdown tbody tr:nth-child(even) {
+  background: rgba(9, 9, 11, 0.02);
+}
+.light .markdown blockquote {
+  border-left-color: #d4d4d8;
+  color: #71717a;
+}
+.light .markdown .hljs {
+  color: #27272a;
+}
+.light .markdown .hljs-comment,
+.light .markdown .hljs-quote {
+  color: #71717a;
+}
+.light .markdown .hljs-keyword,
+.light .markdown .hljs-selector-tag,
+.light .markdown .hljs-built_in,
+.light .markdown .hljs-name,
+.light .markdown .hljs-literal,
+.light .markdown .hljs-tag {
+  color: #7c3aed;
+}
+.light .markdown .hljs-string,
+.light .markdown .hljs-regexp,
+.light .markdown .hljs-addition,
+.light .markdown .hljs-meta-string {
+  color: #059669;
+}
+.light .markdown .hljs-number,
+.light .markdown .hljs-symbol,
+.light .markdown .hljs-bullet {
+  color: #b45309;
+}
+.light .markdown .hljs-title,
+.light .markdown .hljs-title.function_,
+.light .markdown .hljs-section {
+  color: #0e7490;
+}
+.light .markdown .hljs-attr,
+.light .markdown .hljs-attribute,
+.light .markdown .hljs-variable,
+.light .markdown .hljs-template-variable,
+.light .markdown .hljs-class .hljs-title,
+.light .markdown .hljs-type {
+  color: #1d4ed8;
+}
+.light .markdown .hljs-meta {
+  color: #52525b;
+}
+.light .markdown .hljs-deletion {
+  color: #dc2626;
 }
 
 /* menos movimento: desliga apenas as animacoes decorativas, nunca as do orb */

@@ -228,8 +228,8 @@ export class Agent {
     trackUsage(this.session.usage, usage, this.messages);
   }
 
-  async compact(_emit?: EmitFn | null): Promise<void> {
-    return compactSession(this.session, _emit);
+  async compact(_emit?: EmitFn | null, customInstructions?: string): Promise<void> {
+    return compactSession(this.session, _emit, customInstructions);
   }
 
   hardTruncate(keep?: number, budget?: number | null): void {

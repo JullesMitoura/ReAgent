@@ -3,9 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#09090b" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
     <title>Reagent</title>
+    <script>
+      // Aplica o tema antes da primeira pintura, evitando flash dark->light.
+      (function () {
+        try {
+          var saved = localStorage.getItem("reagent-theme");
+          var light = saved ? saved === "light" : window.matchMedia("(prefers-color-scheme: light)").matches;
+          if (light) document.documentElement.classList.add("light");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

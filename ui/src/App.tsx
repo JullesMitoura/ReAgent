@@ -386,7 +386,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen gap-4 p-4 text-zinc-100 antialiased">
+      <div className="flex h-screen gap-4 p-4 text-zinc-100 light:text-zinc-900 antialiased">
         <Sidebar
           mode={mode}
           root={root}

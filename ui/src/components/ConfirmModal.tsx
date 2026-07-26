@@ -29,15 +29,15 @@ export function ConfirmModal({ title, description, confirmLabel, onConfirm, onCa
         aria-modal="true"
         aria-labelledby="confirm-title"
         onKeyDown={handleKeyDown}
-        className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-900 p-5"
+        className="w-full max-w-sm rounded-2xl border border-white/10 light:border-zinc-900/10 bg-zinc-900 light:bg-white p-5"
       >
-        <h2 id="confirm-title" className="text-base font-medium text-zinc-100">{title}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-zinc-400">{description}</p>
+        <h2 id="confirm-title" className="text-base font-medium text-zinc-100 light:text-zinc-900">{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-400 light:text-zinc-600">{description}</p>
         <div className="mt-5 flex justify-end gap-2">
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition-colors hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="rounded-lg px-3 py-2 text-sm text-zinc-300 light:text-zinc-700 transition-colors hover:bg-white/8 light:hover:bg-zinc-900/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
             Cancel
           </button>

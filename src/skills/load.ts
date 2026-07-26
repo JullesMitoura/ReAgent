@@ -9,14 +9,15 @@ import os from "node:os";
 import path from "node:path";
 
 import { config } from "../config.js";
+import { BUNDLED_SKILLS } from "./bundled.js";
 
 export interface SkillMeta {
   name: string;
   description: string;
   userInvocable: boolean;
-  /** Absolute path to SKILL.md */
+  /** Absolute path to SKILL.md, or "<bundled>" for a skill shipped with ReAgent. */
   path: string;
-  source: "user" | "project";
+  source: "user" | "project" | "bundled";
 }
 
 export interface Skill extends SkillMeta {
@@ -89,11 +90,24 @@ function scanDir(dir: string, source: "user" | "project"): SkillMeta[] {
   return out;
 }
 
-/** Catalog only (no bodies). Project skills override user skills with the same name. */
+/**
+ * Catalog only (no bodies). Precedence low to high: bundled (shipped with
+ * ReAgent) < user < project; a later source overrides an earlier one with the
+ * same name.
+ */
 export function listSkillCatalog(): SkillMeta[] {
   const userDir = path.join(os.homedir(), ".reagent", "skills");
   const projectDir = path.join(config.root, ".reagent", "skills");
   const map = new Map<string, SkillMeta>();
+  for (const s of BUNDLED_SKILLS) {
+    map.set(s.name, {
+      name: s.name,
+      description: s.description,
+      userInvocable: s.userInvocable,
+      path: "<bundled>",
+      source: "bundled",
+    });
+  }
   for (const s of scanDir(userDir, "user")) map.set(s.name, s);
   for (const s of scanDir(projectDir, "project")) map.set(s.name, s);
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -103,6 +117,10 @@ export function listSkillCatalog(): SkillMeta[] {
 export function loadSkill(name: string): Skill | null {
   const meta = listSkillCatalog().find((s) => s.name === name);
   if (!meta) return null;
+  if (meta.source === "bundled") {
+    const bundled = BUNDLED_SKILLS.find((s) => s.name === name);
+    return bundled ? { ...meta, body: bundled.body.trim() } : null;
+  }
   try {
     const text = fs.readFileSync(meta.path, "utf8");
     const { body } = parseFrontmatter(text);
