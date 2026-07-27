@@ -1,4 +1,4 @@
-// Git safety rules (Codex style + Claude Code shared-stash safety): the
+// Git safety rules (Codex-style shared-stash safety): the
 // repository state is the user's.
 export const GIT_SAFETY =
   `Git safety:

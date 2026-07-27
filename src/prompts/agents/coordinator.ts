@@ -1,6 +1,6 @@
 /**
  * Coordinator-mode orchestration block (injected into the main system prompt when
- * config.coordinatorMode). Condensed from Claude Code's coordinator manual, mapped
+ * config.coordinatorMode). Mapped
  * onto ReAgent's tools: `agent` (spawn), `send_message` (continue), `parallel_agents`
  * (write-capable workers on disjoint files), and read-only explore/plan.
  */

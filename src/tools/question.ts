@@ -7,7 +7,7 @@
  * With no handler and no TTY, a literal synthetic answer (runs in CI without
  * blocking).
  *
- * Claude Code AskUserQuestion rules:
+ * AskUserQuestion rules:
  * - Sub-agents never ask (allowQuestion=false).
  * - A single option is not a decision: auto-proceed, do not interrupt.
  * - Prefer 2–4 options when offering choices.
@@ -37,7 +37,7 @@ export async function question(question: string, options?: string[] | null): Pro
   }
 
   const clean = cleanOptions(options);
-  // A question with a single option has no decision in it (Claude Code rule).
+  // A question with a single option has no decision in it.
   // Do not interrupt the user; treat that path as chosen and continue.
   if (clean.length === 1) {
     return `(a question needs at least two distinct options; proceeding with "${clean[0]}" as the chosen approach)`;

@@ -1,5 +1,5 @@
 /**
- * Background bash tasks (Claude Code's `run_in_background` pattern).
+ * Background bash tasks (`run_in_background` pattern).
  *
  * A background command is permission-gated like a normal bash call, then
  * spawned detached from the turn with stdout+stderr redirected to
@@ -23,6 +23,7 @@ import path from "node:path";
 
 import { config } from "../config.js";
 import { scrubbedEnv } from "../lib/env-scrub.js";
+import { killProcessTree } from "../lib/proc-kill.js";
 import { currentTurn } from "../turn-context.js";
 import type { BgNotifyHost } from "../turn-context.js";
 import { ToolError } from "./errors.js";
@@ -69,11 +70,7 @@ function isAlive(proc: ChildProcess): boolean {
 }
 
 function killGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    // group already dead or without permission: ignore
-  }
+  killProcessTree(pid, signal);
 }
 
 // Never leak a background task past the process (same policy as shell.ts:

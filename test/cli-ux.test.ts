@@ -16,20 +16,27 @@ import {
 } from "../src/cli/repl.js";
 
 let savedHome: string | undefined;
+let savedUserProfile: string | undefined;
 let tmpHome: string;
 const originalRoot = config.root;
 let project: string;
 
 beforeEach(() => {
+  // os.homedir() reads $HOME on POSIX but %USERPROFILE% on win32, so both
+  // must be faked for the isolation to hold on every platform.
   savedHome = process.env.HOME;
+  savedUserProfile = process.env.USERPROFILE;
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "reagent-home-"));
   process.env.HOME = tmpHome;
+  process.env.USERPROFILE = tmpHome;
   project = config.setRoot(fs.mkdtempSync(path.join(os.tmpdir(), "reagent-cli-ux-")));
 });
 
 afterEach(() => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
+  if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = savedUserProfile;
   fs.rmSync(tmpHome, { recursive: true, force: true });
   config.setRoot(originalRoot);
   fs.rmSync(project, { recursive: true, force: true });

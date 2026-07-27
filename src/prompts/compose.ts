@@ -1,5 +1,5 @@
 /**
- * Cache-aware system prompt composition (Claude Code / Codex pattern).
+ * Cache-aware system prompt composition (Codex-style pattern).
  *
  * Order: stable core → conditional rules → volatile disk blocks (last).
  * Situational reminders are NOT assembled here; inject via prompts/reminders.
@@ -126,13 +126,13 @@ function gitStatusSnippet(): string {
   }
 }
 
-// --- AGENTS.md / CLAUDE.md hierarchy (Claude Code style) ---------------------
+// --- AGENTS.md hierarchy -----------------------------------------------------
 
-const INSTRUCTION_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"] as const;
+const INSTRUCTION_FILE_NAMES = ["AGENTS.md"] as const;
 const MAX_INSTRUCTIONS_CHARS = 40_000;
 const MAX_ANCESTOR_LEVELS = 5;
 
-/** First instruction file in a dir (AGENTS.md preferred over CLAUDE.md). */
+/** First instruction file in a dir (AGENTS.md if present). */
 function readInstructionFile(dir: string): { file: string; text: string } | null {
   for (const name of INSTRUCTION_FILE_NAMES) {
     const f = path.join(dir, name);
@@ -149,7 +149,7 @@ function readInstructionFile(dir: string): { file: string; text: string } | null
 
 /**
  * Instruction blocks in precedence order (outermost first, root last = highest
- * precedence): global ~/.reagent/AGENTS.md, then AGENTS.md/CLAUDE.md in each
+ * precedence): global ~/.reagent/AGENTS.md, then AGENTS.md in each
  * directory from the outermost ancestor (capped at MAX_ANCESTOR_LEVELS above
  * root, stopping at the home directory or filesystem root) down to root.
  * Exported for tests.

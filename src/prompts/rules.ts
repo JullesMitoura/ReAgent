@@ -1,6 +1,6 @@
 // Fixed system-prompt rule blocks as versioned assets (best practice P0):
 // originally copied from src/agent.py (build_system_prompt), since evolved
-// with rules distilled from the Claude Code reference prompts.
+// with core agent coding rules.
 //
 // The original U+2014 em dash goes in as a unicode escape in the source (see
 // CONTRACTS.md section 0.4). It is the only point where the "no em dash" rule

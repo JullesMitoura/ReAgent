@@ -1,6 +1,6 @@
 /**
  * `exit_plan_mode` tool: present the finished plan for approval and leave plan mode
- * so implementation can begin (Claude Code ExitPlanMode pattern).
+ * so implementation can begin.
  *
  * Plan mode keeps the tool surface read-only; this is the single transition out.
  * It flips the process permission mode back to "default" and echoes the plan into

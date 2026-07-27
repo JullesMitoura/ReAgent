@@ -7,6 +7,7 @@
 // - BUFFER_CAP is an export const (contract): test_session_buffer_cap uses a
 //   real output larger than the 1MB cap instead of shrinking the cap.
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +20,18 @@ import { newTurnContext, runWithTurn } from "../src/turn-context.js";
 
 const originalRoot = config.root;
 let project: string;
+
+// A few tests need a long-lived/large-output child process and use a literal
+// `python3` command for that. Bare Windows installs (and some minimal POSIX
+// images) only ship `python`/`py`, not a `python3` alias, so those tests are
+// gated on the interpreter's actual presence rather than on platform alone.
+const hasPython3 = (() => {
+  try {
+    return spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+})();
 
 function sessionId(text: string): number {
   const m = /\[session (\d+) started/.exec(text);
@@ -51,7 +64,7 @@ describe("exec sessions", () => {
     expect(execSessions.listSessions()).toBe("no sessions");
   });
 
-  it("test_long_command_becomes_session_and_poll_gets_output", async () => {
+  it.skipIf(!hasPython3)("test_long_command_becomes_session_and_poll_gets_output", async () => {
     const cmd =
       "python3 -c 'import time; time.sleep(0.8); print(\"up\", flush=True); time.sleep(30)'";
     const first = await execSessions.execCommand(cmd, 300);
@@ -77,7 +90,7 @@ describe("exec sessions", () => {
     expect(execSessions.listSessions()).toBe("no sessions");
   });
 
-  it("test_dead_session_is_detected_and_removed", async () => {
+  it.skipIf(!hasPython3)("test_dead_session_is_detected_and_removed", async () => {
     const first = await execSessions.execCommand(
       "python3 -c 'import time; time.sleep(0.6)'",
       300,
@@ -103,7 +116,7 @@ describe("exec sessions", () => {
     expect(buf.take()).toBe(""); // cursor: increment already delivered
   });
 
-  it("test_session_buffer_cap_applies_to_real_output", async () => {
+  it.skipIf(!hasPython3)("test_session_buffer_cap_applies_to_real_output", async () => {
     // real output larger than BUFFER_CAP (1MB): the session buffer cuts the middle
     const result = await execSessions.execCommand(
       "python3 -c 'print(\"x\" * 2500000)'",

@@ -1,7 +1,7 @@
 /**
  * Resolve and run typed agents via the shared tool-loop.
  * Supports fork (inherit system prefix), background (agents_* events), worktree cwd,
- * and resume via send_message (Claude Code continue-vs-spawn).
+ * and resume via send_message (continue-vs-spawn).
  */
 
 import { runToolLoop } from "../agent/tool-loop.js";

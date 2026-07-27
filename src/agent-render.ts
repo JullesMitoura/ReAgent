@@ -1,7 +1,7 @@
 /**
  * Terminal renderer over Agent.runEvents (port of Agent.run, agent.py:629-683).
  *
- * Redesigned for a Claude-Code-style experience: raw tool names/JSON never
+ * Redesigned for a clean terminal experience: raw tool names/JSON never
  * appear at the default verbosity. Instead each tool call gets a friendly,
  * present-continuous one-liner (tool-labels.ts), the task list shows a
  * completion percentage, and the turn ends with a compact, honest summary

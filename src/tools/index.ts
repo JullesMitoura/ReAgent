@@ -830,7 +830,7 @@ export function activeSchemas(): object[] {
   } else if (config.coordinatorMode) {
     out = out.filter((s) => COORDINATOR_MODE_TOOLS.has(schemaName(s)));
   }
-  // Stable order for prompt-cache friendliness (Claude Code assembleToolPool).
+  // Stable order for prompt-cache friendliness.
   return out.sort((a, b) => schemaName(a).localeCompare(schemaName(b)));
 }
 
@@ -849,7 +849,7 @@ function effectiveMaxToolOutput(): number {
   return _maxToolOutputOverride ?? MAX_TOOL_OUTPUT;
 }
 
-// Aggregate tool-output budget per TURN (Claude Code pattern): even when every
+// Aggregate tool-output budget per TURN: even when every
 // individual output stays under MAX_TOOL_OUTPUT, a turn full of near-cap
 // outputs would flood the history. Once the turn's accumulated chars
 // (TurnContext.toolOutputChars) would exceed the budget, further large outputs

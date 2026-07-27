@@ -15,6 +15,7 @@
 // proves the aggregator actually reaches and terminates a real lingering
 // exec_command session (the piece repl.ts's exit path was missing).
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,6 +27,19 @@ import { killAllToolProcesses } from "../src/tools/process-registry.js";
 
 const originalRoot = config.root;
 let project: string;
+
+// The lingering-session fixture below needs a long-lived child process and
+// uses a literal `python3` command for that. Bare Windows installs (and some
+// minimal POSIX images) only ship `python`/`py`, not a `python3` alias, so the
+// test is gated on the interpreter's actual presence rather than on platform
+// alone.
+const hasPython3 = (() => {
+  try {
+    return spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+})();
 
 beforeEach(() => {
   project = fs.mkdtempSync(path.join(os.tmpdir(), "reagent-process-registry-"));
@@ -42,7 +56,7 @@ afterEach(() => {
 });
 
 describe("killAllToolProcesses", () => {
-  it("test_terminates_a_lingering_exec_command_session", async () => {
+  it.skipIf(!hasPython3)("test_terminates_a_lingering_exec_command_session", async () => {
     // A long-lived command (like a dev server started to preview a generated
     // game) becomes a tracked session instead of blocking the tool call.
     const cmd =

@@ -1,5 +1,5 @@
 /**
- * Human-readable live status for the orb (Claude Code / Cursor style).
+ * Human-readable live status for the orb (Cursor style).
  * Short verb + optional target — never raw tool names.
  */
 

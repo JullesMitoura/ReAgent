@@ -1,6 +1,5 @@
 /**
- * `structured_output` tool: a sub-agent's machine-readable final report
- * (Claude Code SyntheticOutputTool pattern).
+ * `structured_output` tool: a sub-agent's machine-readable final report.
  *
  * Calling it ENDS the sub-agent's run: the tool-loop treats it as terminal and
  * returns its formatted payload as the report. This gives the parent a predictable

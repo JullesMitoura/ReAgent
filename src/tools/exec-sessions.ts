@@ -22,7 +22,9 @@ import os from "node:os";
 import { config } from "../config.js";
 import { scrubbedEnv } from "../lib/env-scrub.js";
 import { capHeadTail, HeadTailBuffer } from "../lib/head-tail-buffer.js";
+import { killProcessTree } from "../lib/proc-kill.js";
 import * as permissions from "../permissions.js";
+import { shellArgv } from "../sandbox.js";
 
 // Cap of the per-session buffer (memory) and of the increment returned by poll.
 export const BUFFER_CAP = 1_000_000;
@@ -149,15 +151,7 @@ class ExecSession {
 
   /** Kills the whole process group (grandchildren included). Idempotent. */
   kill(): void {
-    try {
-      process.kill(-this.proc.pid, "SIGKILL");
-    } catch {
-      try {
-        this.proc.kill("SIGKILL");
-      } catch {
-        // process already dead
-      }
-    }
+    killProcessTree(this.proc.pid, "SIGKILL");
   }
 }
 
@@ -202,10 +196,17 @@ function withExitNote(
   return out ? `${out}\n${note}` : note;
 }
 
-/** Starts the command in a PTY (own process group, env without secrets). */
+/**
+ * Starts the command in a PTY (own process group, env without secrets).
+ *
+ * Uses the same shell resolution as the bash tool (sandbox.ts's shellArgv):
+ * bash on POSIX, Git for Windows' bash.exe on win32. Previously hardcoded
+ * "/bin/sh", which does not exist on Windows and diverged from the plain
+ * bash tool's own shell choice on POSIX too.
+ */
 function spawnSession(pty: PtyModule, command: string): ExecSession {
-  // Python's shell=True: /bin/sh -c command; node-pty does setsid on the child
-  const proc = pty.spawn("/bin/sh", ["-c", command], {
+  const [shellPath, ...shellArgs] = shellArgv(command);
+  const proc = pty.spawn(shellPath!, shellArgs, {
     name: "xterm",
     cwd: config.root,
     env: scrubbedEnv() as { [key: string]: string },

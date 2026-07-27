@@ -391,7 +391,7 @@ export async function handleCommand(cmd: string, agent: Agent, ui: ReplUI): Prom
     ui.print(`  subagent: ${config.enableSubagent}  parallel: ${config.enableParallel}`);
     const ctxPath = path.join(config.stateDir, "CONTEXT.md");
     ui.print(`  CONTEXT.md: ${fs.existsSync(ctxPath) ? "present" : "missing"}`);
-    for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+    for (const name of ["AGENTS.md"]) {
       const p = path.join(config.root, name);
       ui.print(`  ${name}: ${fs.existsSync(p) ? "present" : "missing"}`);
     }

@@ -8,7 +8,7 @@
  *
  * Each step is a fresh sub-agent (agent_type + self-contained prompt). Disabled by
  * default (config.enableWorkflow); only offered when the user opts into structured
- * fan-out. Modeled on Claude Code's Workflow tool but intentionally minimal.
+ * fan-out. Intentionally minimal workflow orchestration.
  */
 
 import { allAgents, runAgent } from "../agents/run.js";

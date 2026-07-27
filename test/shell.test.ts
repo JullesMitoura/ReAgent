@@ -4,7 +4,7 @@
 // implementation, overridden per test: _allow() plays the role of confirm_bash ->
 // True and _noSandbox() that of sandbox.available -> False.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,6 +49,18 @@ const realSafety =
   await vi.importActual<typeof import("../src/command-safety.js")>("../src/command-safety.js");
 
 const spawnMock = vi.mocked(spawn);
+
+// A few tests exercise real output-truncation behavior via a literal `python3`
+// command. Bare Windows installs (and some minimal POSIX images) only ship
+// `python`/`py`, not a `python3` alias, so those tests are gated on the
+// interpreter's actual presence rather than on platform alone.
+const hasPython3 = (() => {
+  try {
+    return spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+})();
 
 function _allow(): void {
   vi.mocked(confirmBash).mockResolvedValue(true);
@@ -140,7 +152,10 @@ describe("shell", () => {
     expect(result).toContain("Output:\ncabecalho");
   });
 
-  it("test_exit_by_signal_maps_to_128_plus", async () => {
+  // Real signal delivery (kill -9 on the shell's own $$) is a POSIX process
+  // model guarantee; Git-Bash/MSYS's `kill` on Windows does not reliably
+  // reproduce it since there is no real OS signal underneath.
+  it.skipIf(process.platform === "win32")("test_exit_by_signal_maps_to_128_plus", async () => {
     _allow();
     _noSandbox();
     vi.mocked(isDangerousCommand).mockReturnValue(false);
@@ -148,7 +163,7 @@ describe("shell", () => {
     expect(result).toContain("Exit code: 137 (SIGKILL)");
   });
 
-  it("test_total_lines_reported_when_truncated", async () => {
+  it.skipIf(!hasPython3)("test_total_lines_reported_when_truncated", async () => {
     _allow();
     _noSandbox();
     _setMaxOutput(2_000);
@@ -177,7 +192,7 @@ describe("shell", () => {
     expect(elapsed).toBeLessThan(2.5); // the background child does not hold the return
   });
 
-  it("test_stderr_survives_giant_stdout", async () => {
+  it.skipIf(!hasPython3)("test_stderr_survives_giant_stdout", async () => {
     _allow();
     _noSandbox();
     _setMaxOutput(10_000);
@@ -215,8 +230,13 @@ describe("shell", () => {
     const call = spawnMock.mock.calls[0] as unknown as [string, string[], object];
     const [file, args] = call;
     expect(Array.isArray(args)).toBe(true);
-    expect(["bash", "sh"]).toContain(path.basename(file));
-    expect(file.endsWith("bash")).toBe(true); // /bin/bash existe em macOS/Linux de CI
+    if (process.platform === "win32") {
+      // shellArgv() resolves Git-for-Windows bash.exe there, not a bare "bash".
+      expect(path.basename(file).toLowerCase()).toBe("bash.exe");
+    } else {
+      expect(["bash", "sh"]).toContain(path.basename(file));
+      expect(file.endsWith("bash")).toBe(true); // /bin/bash existe em macOS/Linux de CI
+    }
   });
 
   it("test_kill_active_aborts_running_command", async () => {

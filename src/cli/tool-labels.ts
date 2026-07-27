@@ -1,6 +1,6 @@
 /**
  * Human-friendly, present-continuous descriptions of a tool call, for the
- * default ("normal") terminal verbosity — Claude Code style: raw tool names
+ * default ("normal") terminal verbosity — raw tool names
  * and JSON payloads never appear in the default experience (see
  * CLI_UX_REDESIGN's "Tool Calls" section). Verbose/Debug fall back to
  * toolTechnicalDetail for the parts of the audience that want the mechanics.

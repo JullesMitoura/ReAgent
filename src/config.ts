@@ -56,7 +56,7 @@ export const KNOWN_KEYS: ReadonlySet<string> = new Set([
   "deferred_tools", "workflow", "verbosity",
 ]);
 
-// --- terminal/UI verbosity (Claude Code style progressive disclosure) --------
+// --- terminal/UI verbosity (progressive disclosure) --------
 
 /**
  * How much execution detail the terminal renderer shows.
@@ -275,7 +275,7 @@ export class Config {
   forceAutoApprove = false;
   forceAllowDangerous = false;
   /**
-   * Autonomy mode (Claude Code style). `planMode` remains a convenience mirror
+   * Autonomy mode. `planMode` remains a convenience mirror
    * of permissionMode === "plan" for older call sites.
    */
   permissionMode: PermissionMode = "default";
@@ -534,8 +534,12 @@ export class Config {
       (process.env.AGENT_SANDBOX_NETWORK ?? "0") === "1" ||
       this.getBool(fileCfg, "sandbox_network", false);
 
+    // Feature-detected, not platform-gated: exec sessions need node-pty (an
+    // optional native dependency) AND a resolvable shell (sandbox.ts's
+    // shellArgv, which on Windows requires Git for Windows' bash.exe). Both
+    // fail closed per-call with a clear message instead of a blanket disable,
+    // so a properly set up Windows machine gets the feature too.
     this.enableExecSessions =
-      process.platform !== "win32" &&
       (process.env.AGENT_EXEC_SESSIONS ?? "") !== "0" &&
       this.getBool(fileCfg, "exec_sessions", true);
     this.execSessionMax = this.getInt(fileCfg, "exec_session_max", 8);

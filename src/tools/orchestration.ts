@@ -3,7 +3,7 @@
  *
  * Consecutive isConcurrencySafe tools run via Promise.all; unsafe tools run
  * alone (serial). Results are always keyed by tool_call id; callers append
- * history in the original call order (Claude Code / Codex pattern).
+ * history in the original call order (Codex-style pattern).
  */
 
 import { config } from "../config.js";
@@ -117,7 +117,7 @@ export function isConcurrencySafe(name: string): boolean {
 const READ_ONLY_AGENT_TYPES: ReadonlySet<string> = new Set(["explore", "plan", "verification"]);
 
 /**
- * Argument-aware concurrency safety (Claude Code parses tool input before deciding).
+ * Argument-aware concurrency safety (tool input is parsed before deciding).
  * The `agent` tool is only safe to parallelize when it launches a read-only agent
  * type, or when background=true (it returns an immediate ack, doing no work inline).
  * A write-capable foreground agent is serialized so two of them cannot edit at once.

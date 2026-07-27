@@ -1,0 +1,26 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+        name: Install dependencies (root + ui workspace)
+      - run: npm run typecheck
+      - run: npm test
+      # npm publish runs the prepublishOnly script automatically
+      # (npm run build:web && npm run build), so no separate build step here.
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

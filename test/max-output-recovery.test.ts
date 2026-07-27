@@ -1,5 +1,5 @@
 // Max-output recovery: finish_reason=length with no tool calls must auto-
-// continue (Claude Code pattern) instead of ending the turn mid-thought.
+// continue instead of ending the turn mid-thought.
 
 import fs from "node:fs";
 import os from "node:os";

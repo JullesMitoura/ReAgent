@@ -29,7 +29,7 @@ const HARD_TRUNCATE_KEEP = 20;
 const SUMMARY_TOOL_OUTPUT_MAX = 2_000;
 const PRESERVE_USER_TOKENS = 10_000;
 
-// Post-compact re-injection of recently read files (Claude Code re-injects
+// Post-compact re-injection of recently read files (re-injects
 // up to 5 recent files so the model keeps the code it was working on).
 const REINJECT_MAX_FILES = 5;
 const REINJECT_FILE_CHARS = 5_000;

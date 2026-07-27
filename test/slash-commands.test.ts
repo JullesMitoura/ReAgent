@@ -18,6 +18,7 @@ import type { ReplUI } from "../src/cli/slash-commands.js";
 const originalRoot = config.root;
 const cleanups: string[] = [];
 let savedHome: string | undefined;
+let savedUserProfile: string | undefined;
 let project: string;
 let projectRoot: string; // root after setRoot (realpath resolved)
 
@@ -60,15 +61,21 @@ beforeEach(() => {
   projectRoot = config.setRoot(project);
   config.autoApprove = true;
   config.contextFile = false;
+  // os.homedir() reads $HOME on POSIX but %USERPROFILE% on win32, so both
+  // must be faked for the isolation to hold on every platform.
   savedHome = process.env.HOME;
+  savedUserProfile = process.env.USERPROFILE;
   const fakeHome = path.join(project, "fake-home");
   fs.mkdirSync(fakeHome, { recursive: true });
   process.env.HOME = fakeHome;
+  process.env.USERPROFILE = fakeHome;
 });
 
 afterEach(() => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
+  if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = savedUserProfile;
   config.setRoot(originalRoot);
   while (cleanups.length) {
     fs.rmSync(cleanups.pop() as string, { recursive: true, force: true });

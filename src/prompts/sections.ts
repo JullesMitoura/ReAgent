@@ -9,7 +9,7 @@ export const USER_PROFILE_LABEL =
 export const CONTEXT_LABEL =
   "Project context (auto-generated CONTEXT.md \u2014 orient yourself from this):";
 
-// Label for the team's instruction files (AGENTS.md, CLAUDE.md).
+// Label for the team's instruction files (AGENTS.md).
 export function projectInstructionsLabel(name: string): string {
   return `Project instructions (${name}):`;
 }

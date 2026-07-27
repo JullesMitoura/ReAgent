@@ -1,6 +1,6 @@
 /**
- * Per-process registry of files the agent has read or edited (Claude Code
- * readFileState pattern). Two consumers:
+ * Per-process registry of files the agent has read or edited.
+ * Two consumers:
  * - compactSession re-injects the most recently read files after a compaction,
  *   so the model does not lose the code it was just working with;
  * - the reminder injector warns the model when a file changed on disk since the

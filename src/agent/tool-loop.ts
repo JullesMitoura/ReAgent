@@ -68,7 +68,7 @@ export function assistantMessage(msg: CompletionMessage): ChatMessage {
 
 /**
  * Runs a bounded non-streaming agentic loop; returns the final text report.
- * Concurrency-safe tools in a round run via runToolBatches (Claude Code pattern).
+ * Concurrency-safe tools in a round run via runToolBatches.
  */
 export async function runToolLoop(opts: ToolLoopOptions): Promise<string> {
   const empty = opts.emptyResult ?? "(no findings)";

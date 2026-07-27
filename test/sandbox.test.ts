@@ -108,7 +108,13 @@ describe("sandbox", () => {
     expect(argv[0]).toBe("/usr/bin/sandbox-exec");
     expect(argv[1]).toBe("-p");
     expect(argv[2]).toBe(buildProfile());
-    expect(argv.slice(3)).toEqual(["/bin/bash", "-lc", "echo hi"]);
+    if (process.platform === "win32") {
+      // shellArgv() resolves Git-for-Windows bash.exe instead of /bin/bash there.
+      expect(argv[3]).toMatch(/bash\.exe$/i);
+      expect(argv.slice(4)).toEqual(["-lc", "echo hi"]);
+    } else {
+      expect(argv.slice(3)).toEqual(["/bin/bash", "-lc", "echo hi"]);
+    }
   });
 
   it("test_available_respeita_sandbox_mode_off", () => {

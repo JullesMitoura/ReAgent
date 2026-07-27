@@ -1,7 +1,7 @@
 /**
  * Registry of completed / continuable nested agents.
  *
- * Enables Claude Code SendMessage-style continuation: after an agent finishes,
+ * Enables SendMessage-style continuation: after an agent finishes,
  * the parent can send a follow-up that resumes with the full prior transcript
  * (not a fresh spawn).
  *

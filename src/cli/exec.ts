@@ -26,9 +26,6 @@ import { claimSignalOwnership } from "../tools/exec-sessions.js";
 import { newTurnContext, runWithTurn } from "../turn-context.js";
 import type { ServerEvent } from "../types.js";
 
-/** Signals Ctrl+C (KeyboardInterrupt) during the turn -> exit 130. */
-class KeyboardInterrupt extends Error {}
-
 const USAGE =
   "usage: reagent exec \"PROMPT\" [--json] [--output-last-message FILE] " +
   "[--dir DIR] [--yolo] [--allow-dangerous]";
@@ -140,7 +137,7 @@ export async function execMain(argv: string[]): Promise<number> {
   const onSigint = (): void => {
     cancel.set = true;
     killAllToolProcesses();
-    onSigintReject(new KeyboardInterrupt());
+    onSigintReject(new TurnCancelled());
   };
   process.on("SIGINT", onSigint);
 
@@ -153,7 +150,7 @@ export async function execMain(argv: string[]): Promise<number> {
       sigint,
     ]);
   } catch (e) {
-    if (e instanceof KeyboardInterrupt) {
+    if (e instanceof TurnCancelled) {
       if (asJson) outJson({ type: "cancelled" });
       return 130;
     }

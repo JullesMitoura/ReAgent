@@ -18,6 +18,7 @@ import path from "node:path";
 
 import { recordEdit, recordRead } from "../agent/read-state.js";
 import { config, IGNORED_DIRS, PROTECTED_FILES, realpathSafe } from "../config.js";
+import { which } from "../lib/which.js";
 import { getCloseMatches } from "../lib/similarity.js";
 import { diffPreview } from "../lib/text-diff.js";
 import { confirmFile, denialMessage } from "../permissions.js";
@@ -30,29 +31,21 @@ import { ArgumentError, ToolError } from "./errors.js";
 // capture the options (equivalent of Python's subprocess.run monkeypatch).
 export const _testHooks: { spawnSync: typeof spawnSync } = { spawnSync };
 
-/** First executable found in PATH, or null (shutil.which). */
-function which(cmd: string): string | null {
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
-    const candidate = path.join(dir, cmd);
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      if (fs.statSync(candidate).isFile()) return candidate;
-    } catch {
-      // keep searching
-    }
-  }
-  return null;
-}
-
 /** Quick post-edit check; the result goes back to the LLM for self-correction. */
 export function _diagnostics(p: string): string {
   const ext = path.extname(p);
   let cmd: string[];
   if (ext === ".py") {
     const python = which("python3") ?? which("python");
-    if (python === null) return ""; // no python in PATH, no check
-    cmd = [python, "-m", "py_compile", p];
+    if (python !== null) {
+      cmd = [python, "-m", "py_compile", p];
+    } else {
+      // Common on Windows: only the "py" launcher is on PATH, and it needs
+      // -3 to pick Python 3 (there is no plain "python"/"python3" binary).
+      const launcher = which("py");
+      if (launcher === null) return ""; // no python in PATH, no check
+      cmd = [launcher, "-3", "-m", "py_compile", p];
+    }
   } else if (ext === ".js" || ext === ".mjs" || ext === ".cjs") {
     cmd = [process.execPath, "--check", p];
   } else {

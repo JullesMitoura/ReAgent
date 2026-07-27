@@ -45,6 +45,11 @@ import { config } from "../src/config.js";
 
 const originalRoot = config.root;
 const originalMaxIterations = config.maxIterations;
+const originalEnv = {
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  key: process.env.AZURE_OPENAI_KEY,
+  llm: process.env.AZURE_OPENAI_LLM,
+};
 let project: string;
 let stdoutLines: string[];
 let stderrLines: string[];
@@ -54,6 +59,9 @@ beforeEach(() => {
   config.setRoot(project);
   config.autoApprove = true;
   config.contextFile = false;
+  process.env.AZURE_OPENAI_ENDPOINT = "https://example.test";
+  process.env.AZURE_OPENAI_KEY = "test-key";
+  process.env.AZURE_OPENAI_LLM = "test-model";
   hooks.chatImpl = null;
   hooks.dispatchImpl = null;
   hooks.dispatchCalls = 0;
@@ -73,6 +81,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   config.setRoot(originalRoot);
   config.maxIterations = originalMaxIterations;
+  process.env.AZURE_OPENAI_ENDPOINT = originalEnv.endpoint;
+  process.env.AZURE_OPENAI_KEY = originalEnv.key;
+  process.env.AZURE_OPENAI_LLM = originalEnv.llm;
   fs.rmSync(project, { recursive: true, force: true });
 });
 

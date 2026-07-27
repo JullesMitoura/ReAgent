@@ -1,7 +1,7 @@
 /**
  * Verification sub-agent: an adversarial second layer of QA.
  *
- * Encodes Claude Code's coordinator-mode doctrine + verify skill: verification means
+ * Encodes coordinator-mode doctrine + verify skill: verification means
  * PROVING the change works at a runtime surface, not confirming it exists or re-running CI.
  * Read-only plus bash (to actually run checks); it never edits.
  */

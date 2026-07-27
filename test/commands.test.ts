@@ -13,6 +13,7 @@ import { expandArguments, loadCommands } from "../src/custom-commands.js";
 const originalRoot = config.root;
 const cleanups: string[] = [];
 let savedHome: string | undefined;
+let savedUserProfile: string | undefined;
 let project: string;
 
 function mktemp(prefix: string): string {
@@ -31,16 +32,22 @@ beforeEach(() => {
   config.setRoot(project);
   config.autoApprove = true;
   config.contextFile = false;
-  // Fake HOME: the global side of loadCommands never sees the real ~/.reagent
+  // Fake HOME: the global side of loadCommands never sees the real ~/.reagent.
+  // os.homedir() reads $HOME on POSIX but %USERPROFILE% on win32, so both must
+  // be faked for the isolation to hold on every platform.
   savedHome = process.env.HOME;
+  savedUserProfile = process.env.USERPROFILE;
   const fakeHome = path.join(project, "fake-home");
   fs.mkdirSync(fakeHome, { recursive: true });
   process.env.HOME = fakeHome;
+  process.env.USERPROFILE = fakeHome;
 });
 
 afterEach(() => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
+  if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = savedUserProfile;
   config.setRoot(originalRoot);
   while (cleanups.length) {
     fs.rmSync(cleanups.pop() as string, { recursive: true, force: true });

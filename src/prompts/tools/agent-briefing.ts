@@ -1,6 +1,6 @@
 /**
  * Guidance embedded in agent / parallel_agents tool descriptions
- * (Claude Code writing-subagent-prompts + delegation restraint + Codex spawn modes).
+ * (delegation restraint + Codex spawn modes).
  */
 
 export const WRITING_SUBAGENT_PROMPTS = `
@@ -14,7 +14,7 @@ Briefing rules when spawning a sub-agent:
 - Trust but verify: a worker's summary is intent, not proof — check the diff before reporting success.
 `.trim();
 
-/** Full restraint block for the system prompt (Claude Code subagent-delegation-restraint). */
+/** Full restraint block for the system prompt. */
 export const DELEGATION_RESTRAINT = `
 Subagents multiply cost and time: each one re-establishes context, re-explores, and reports back. Delegate only when the payoff clearly exceeds that overhead — work that is genuinely independent, large enough to justify a fresh context, or naturally parallel:
 - Do the work inline when it is a small, bounded sub-task (a few reads, one search, a short edit, a single check).

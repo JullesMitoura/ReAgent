@@ -1,5 +1,5 @@
 /**
- * Situational reminder injection (Claude Code system-reminder pattern).
+ * Situational reminder injection (system-reminder pattern).
  *
  * After a round of tool results, the loop may append ONE short user-role reminder
  * that nudges the model without polluting the stable system prefix. Kept separate
@@ -23,7 +23,7 @@ import {
 /** Tools whose invocation means a sub-agent is now doing work out of band. */
 const DELEGATION_TOOLS = new Set(["agent", "explore", "parallel_agents", "plan", "workflow"]);
 
-// Todo enforcement (Claude Code pattern): after this many tool rounds without
+// Todo enforcement: after this many tool rounds without
 // a successful todowrite while open items exist, nudge the model to update the
 // list. The same interval rate-limits the nudge itself.
 const TODO_STALE_ROUNDS = 10;
@@ -112,7 +112,7 @@ export interface TaskNotification {
 
 /**
  * Formats a background-agent completion as a <task-notification> block, delivered
- * to the parent as a user-role message (Claude Code / coordinator pattern). The
+ * to the parent as a user-role message (coordinator pattern). The
  * parent must treat it as an internal signal: relay findings, never fabricate them.
  */
 export function formatTaskNotification(n: TaskNotification): string {

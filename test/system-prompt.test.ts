@@ -199,7 +199,7 @@ describe("system-prompt", () => {
     config.coordinatorMode = false;
   });
 
-  it("test_system_prompt_ported_claude_code_rules", () => {
+  it("test_system_prompt_ported_coding_rules", () => {
     const p = buildSystemPrompt();
     // no unnecessary additions / error handling / compat hacks
     expect(p).toContain("Three similar lines is better than a premature abstraction");
@@ -233,15 +233,14 @@ describe("system-prompt", () => {
 });
 
 describe("project instructions hierarchy", () => {
-  it("reads AGENTS.md/CLAUDE.md from ancestors, outermost first, root last, deduped per dir", () => {
+  it("reads AGENTS.md from ancestors, outermost first, root last", () => {
     const base = mktemp("reagent-hier-");
     const mid = path.join(base, "mid");
     const inner = path.join(mid, "inner");
     fs.mkdirSync(inner, { recursive: true });
     fs.writeFileSync(path.join(base, "AGENTS.md"), "outermost instructions");
-    fs.writeFileSync(path.join(mid, "CLAUDE.md"), "mid instructions");
+    fs.writeFileSync(path.join(mid, "AGENTS.md"), "mid instructions");
     fs.writeFileSync(path.join(inner, "AGENTS.md"), "root agents instructions");
-    fs.writeFileSync(path.join(inner, "CLAUDE.md"), "root claude instructions");
     config.setRoot(inner);
     config.autoApprove = true;
     config.contextFile = false;
@@ -251,10 +250,8 @@ describe("project instructions hierarchy", () => {
     const midReal = path.dirname(root);
     const baseReal = path.dirname(midReal);
     expect(p).toContain(`Project instructions (${path.join(baseReal, "AGENTS.md")}):`);
-    expect(p).toContain(`Project instructions (${path.join(midReal, "CLAUDE.md")}):`);
+    expect(p).toContain(`Project instructions (${path.join(midReal, "AGENTS.md")}):`);
     expect(p).toContain(`Project instructions (${path.join(root, "AGENTS.md")}):`);
-    // dedup within a dir: AGENTS.md wins over CLAUDE.md
-    expect(p).not.toContain("root claude instructions");
     // order: outermost first, root last (highest precedence)
     expect(p.indexOf("outermost instructions")).toBeGreaterThan(-1);
     expect(p.indexOf("outermost instructions")).toBeLessThan(p.indexOf("mid instructions"));
@@ -278,20 +275,19 @@ describe("project instructions hierarchy", () => {
     const home = mktemp("reagent-home-");
     fs.mkdirSync(path.join(home, ".reagent"), { recursive: true });
     fs.writeFileSync(path.join(home, ".reagent", "AGENTS.md"), "global");
-    fs.writeFileSync(path.join(home, ".reagent", "CLAUDE.md"), "global claude");
-    fs.writeFileSync(path.join(home, "CLAUDE.md"), "home claude");
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "home agents");
     const deep = path.join(home, "a", "b", "c", "d", "e", "f", "g");
     fs.mkdirSync(deep, { recursive: true });
     fs.writeFileSync(path.join(deep, "AGENTS.md"), "root file");
 
     // 7 levels below home: the upward walk is capped at 5 ancestors, so
-    // home/CLAUDE.md is out of reach; global (deduped to AGENTS.md) + root remain.
+    // home/AGENTS.md is out of reach; global + root remain.
     const blocksDeep = projectInstructionBlocks(deep, home);
     expect(blocksDeep.map((b) => b.text)).toEqual(["global", "root file"]);
 
     // shallow root: home itself is within reach and included between them
     const shallow = path.join(home, "a", "b");
     const blocksShallow = projectInstructionBlocks(shallow, home);
-    expect(blocksShallow.map((b) => b.text)).toEqual(["global", "home claude"]);
+    expect(blocksShallow.map((b) => b.text)).toEqual(["global", "home agents"]);
   });
 });

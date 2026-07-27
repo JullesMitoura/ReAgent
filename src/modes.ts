@@ -1,5 +1,5 @@
 /**
- * Permission / autonomy modes (Claude Code style).
+ * Permission / autonomy modes.
  *
  * - default: ask for mutating tools
  * - plan: read-only tool set; no writes / mutating bash
@@ -48,7 +48,7 @@ export const PLAN_MODE_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Coordinator lead tool pool (Claude Code COORDINATOR_MODE_ALLOWED_TOOLS pattern).
+ * Coordinator lead tool pool.
  * Lead orchestrates; workers write. Lead keeps read tools for trivial lookups.
  */
 export const COORDINATOR_MODE_TOOLS: ReadonlySet<string> = new Set([

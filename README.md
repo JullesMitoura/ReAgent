@@ -9,7 +9,7 @@ no intermediary services.
 This is the TypeScript port of the original Python backend, built for Node with an
 emphasis on the CLI. It keeps the exact same HTTP/SSE contract, so the existing React
 front-end runs unchanged. Sessions are stored as one JSONL file per conversation
-under `.reagent/sessions/` (the style of Codex and Claude Code): human-readable
+under `.reagent/sessions/` (the style of Codex): human-readable
 and git-diffable, with no native or experimental dependency.
 
 > Language: the interface and default responses are in **English**; the agent answers
@@ -28,6 +28,12 @@ calls in a row are blocked (doom-loop breaker) and the model is told to change a
 
 - Node.js >= 22 (no native build step; sessions are plain JSONL files)
 - An Azure OpenAI deployment
+- Windows: the `bash` tool and `exec_command` require Git for Windows
+  (https://git-scm.com/download/win) for its bundled `bash.exe` and coreutils
+  (`ls`, `cat`, `grep`, `sed`, ...), which ReAgent auto-detects via common
+  install locations and PATH. Shell and PTY execution now resolve Git Bash on
+  Windows, and a `windows-latest` job in CI typechecks and builds the project
+  on every push (the full test suite still runs on Linux only).
 
 ## Install and use
 
@@ -83,35 +89,13 @@ exits; not written to disk), **Always allow** (persisted in `.reagent/permission
 and **Deny**. Known-safe read-only commands run without any prompt on any OS; on
 macOS they additionally run inside a Seatbelt sandbox. Other commands always ask first.
 
-### Installing from the Azure Artifacts feed
+### Installing from npm
 
-Once published (see `azure-pipelines.yml`), `reagent` installs like any private npm
-package. One-time setup per machine:
-
-```bash
-npm install -g vsts-npm-auth --registry https://registry.npmjs.com
-```
-
-Add the feed's registry to your user-level `.npmrc` (get the exact URL from the feed's
-**Connect to feed → npm** panel in Azure DevOps, it looks like
-`https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/npm/registry/`):
-
-```
-registry=https://pkgs.dev.azure.com/<org>/<project>/_packaging/<feed>/npm/registry/
-always-auth=true
-```
-
-Then authenticate once (opens a browser / device-code prompt and writes a token into
-`.npmrc`) and install:
+`reagent` is published on the public npm registry, no authentication required:
 
 ```bash
-vsts-npm-auth -config .npmrc
 npm install -g reagent
 ```
-
-On Linux/macOS (no `vsts-npm-auth`), generate a Personal Access Token with **Packaging
-(Read)** scope instead and add it as a base64-encoded `_authToken` line under the
-registry in `.npmrc` (the feed's "Connect to feed" panel gives the exact snippet).
 
 `node-pty` is an optional native dependency (used for persistent shell sessions); if a
 machine has no C++ build toolchain it can fail to compile, `npm install` still succeeds,
@@ -165,7 +149,7 @@ does not exist.
   old head becomes a structured briefing.
 - `/usage` shows tokens spent, the percentage of the context window in use and the
   tokens served by the provider prefix cache.
-- If an `AGENTS.md` (or `CLAUDE.md`) exists at the root, it is injected into the agent
+- If an `AGENTS.md` exists at the root, it is injected into the agent
   instructions; generate one with `/init`.
 - On first run in a directory, ReAgent generates a `.reagent/CONTEXT.md` project map
   (purpose, stack, commands, entry points), injected into the prompt and lazily
@@ -263,7 +247,7 @@ reagent/
 ```
 
 The port mirrors the original Python backend module by module, then was refined
-toward Claude Code / Codex patterns: thin surfaces over a protocol façade,
+toward Codex-style patterns: thin surfaces over a protocol façade,
 cache-aware prompt composition, typed agents with tool allowlists, and
 concurrency-gated tool batches. Design decisions worth noting: Python
 module-level globals become per-turn `TurnContext` scoped through

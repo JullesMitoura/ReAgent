@@ -1,5 +1,5 @@
 /**
- * Git worktree helpers for isolated parallel workers (Claude Code --worktree).
+ * Git worktree helpers for isolated parallel workers.
  */
 
 import { execFileSync } from "node:child_process";

@@ -1,5 +1,5 @@
 /**
- * Core agentic query loop as an async generator (Claude Code query() pattern).
+ * Core agentic query loop as an async generator.
  * Yields ServerEvents; returns the final assistant text.
  *
  * QueryEngine / Agent own the session; this function is the turn loop only.
@@ -276,7 +276,7 @@ export async function* queryLoop(
         continue;
       }
       assembledAnswer += content;
-      // Claude Code-style max-output recovery: truncated completion with no
+      // Max-output recovery: truncated completion with no
       // tool calls → nudge the model to continue mid-thought (up to N times)
       // instead of ending the turn with a half-written answer.
       if (finishReason === "length" && maxOutputRecoveries < MAX_OUTPUT_RECOVERIES) {

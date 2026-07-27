@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build and test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - run: npm ci
+        name: Install dependencies (root + ui workspace)
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:web && npm run build
+
+  build-windows:
+    name: Build and typecheck (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - run: npm ci
+        name: Install dependencies (root + ui workspace)
+      - run: npm run typecheck
+      - run: npm run build:web && npm run build
+      # Full `npm test` isn't run here yet: a handful of vitest suites
+      # assume POSIX shell command literals (python3, sleep, ...) that
+      # haven't been individually verified against this runner's actual
+      # Git Bash + Python setup. Typecheck+build already catches any
+      # Windows-breaking regression; enable `npm test` here once the
+      # remaining suites are confirmed against real workflow logs.

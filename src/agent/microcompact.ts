@@ -1,5 +1,5 @@
 /**
- * Microcompaction (Claude Code pattern): before paying for a full summarize,
+ * Microcompaction: before paying for a full summarize,
  * destructively clear the content of OLD tool results in the persisted history.
  * Unlike packMessages (a per-request view), this rewrites session.messages, so
  * the reclaimed space survives across turns and reduces what a later full

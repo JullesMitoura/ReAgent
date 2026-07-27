@@ -1,5 +1,5 @@
 /**
- * Lifecycle hooks, configured via .reagent/hooks.json (Claude Code compatible).
+ * Lifecycle hooks, configured via .reagent/hooks.json.
  *
  * Supported events:
  *   PreToolUse          — before a tool runs; can deny/ask (matcher = tool name)
@@ -19,7 +19,7 @@
  *     "hooks": {
  *       // flat (legacy) — runs on every call of the event
  *       "PreToolUse": [{ "type": "command", "command": "...", "timeout": 10000 }],
- *       // grouped with matcher (Claude Code) — matcher applies to the tool name
+ *       // grouped with matcher — matcher applies to the tool name
  *       // on PreToolUse / PostToolUse / PostToolUseFailure and is ignored elsewhere.
  *       // Matching is case-insensitive: "*" / absent = all tools; a plain string
  *       // is an exact match; a string with regex metachars ("bash|edit_file",
@@ -79,7 +79,7 @@ export interface HookCommand {
   timeout?: number;
 }
 
-/** Claude Code-style grouped entry: matcher + nested hooks. */
+/** Grouped entry: matcher + nested hooks. */
 export interface HookMatcherGroup {
   /** Tool-name matcher: exact, regex (when metachars present), or "*" / absent = all. */
   matcher?: string;

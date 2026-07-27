@@ -19,6 +19,7 @@ import { isDangerousCommand, isSafeCommand } from "../command-safety.js";
 import { config } from "../config.js";
 import { scrubbedEnv } from "../lib/env-scrub.js";
 import { HeadTailBuffer, capHeadTail, holdIncompleteUtf8 } from "../lib/head-tail-buffer.js";
+import { killProcessTree } from "../lib/proc-kill.js";
 import { confirmBash, denialMessage } from "../permissions.js";
 import { available, looksLikeDenial, shellArgv, wrap } from "../sandbox.js";
 import { launchBackgroundTask } from "./background-tasks.js";
@@ -48,11 +49,7 @@ function isAlive(proc: ChildProcess): boolean {
 }
 
 function killGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    // group already dead or without permission: ignore
-  }
+  killProcessTree(pid, signal);
 }
 
 /**

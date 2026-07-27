@@ -1,5 +1,5 @@
 /**
- * Streaming tool executor (Claude Code StreamingToolExecutor pattern).
+ * Streaming tool executor.
  *
  * Starts concurrency-safe tools as soon as a complete tool_call is available
  * during stream accumulation; drains results in original call order.

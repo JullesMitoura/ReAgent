@@ -1,6 +1,6 @@
 /**
  * send_message: continue a previously spawned agent with its full transcript
- * (Claude Code SendMessage / continue-vs-spawn pattern).
+ * (continue-vs-spawn pattern).
  */
 
 import { continueAgent } from "../agents/run.js";

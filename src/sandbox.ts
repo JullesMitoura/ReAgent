@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { PROTECTED_FILES, config, realpathSafe } from "./config.js";
+import { which } from "./lib/which.js";
 
 /** True when Seatbelt can be used: macOS + sandbox-exec + auto mode. */
 export function available(): boolean {
@@ -104,20 +105,28 @@ export function buildProfile(): string {
   return lines.join("\n");
 }
 
-/** Small port of shutil.which for a single program name. */
-function which(program: string): string | null {
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
-    const candidate = path.join(dir, program);
-    try {
-      if (!fs.statSync(candidate).isFile()) continue;
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return candidate;
-    } catch {
-      continue;
-    }
+/**
+ * Well-known Git for Windows install locations for bash.exe, checked before
+ * falling back to a PATH search. Git for Windows is the standard way to get a
+ * POSIX shell + coreutils on Windows, and is what the safe/dangerous command
+ * classifiers (command-safety.ts) assume (ls, cat, grep, sed, ... by name).
+ */
+function windowsBashCandidates(): string[] {
+  const roots = [
+    process.env.ProgramFiles,
+    process.env["ProgramFiles(x86)"],
+    process.env.ProgramW6432,
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Programs"),
+  ].filter((p): p is string => Boolean(p));
+  return roots.map((root) => path.join(root, "Git", "bin", "bash.exe"));
+}
+
+/** Locates a usable bash.exe on Windows: well-known Git-for-Windows paths, then PATH. */
+function findWindowsBash(): string | null {
+  for (const candidate of windowsBashCandidates()) {
+    if (fs.existsSync(candidate)) return candidate;
   }
-  return null;
+  return which("bash.exe") ?? which("bash");
 }
 
 /**
@@ -126,8 +135,24 @@ function which(program: string): string | null {
  *
  * Inside and outside the sandbox the shell is the same (previously the approved
  * retry fell into shell=True's sh while the sandbox used bash).
+ *
+ * Windows has no /bin/bash or /bin/sh; ReAgent relies on Git for Windows'
+ * bundled bash.exe there (same coreutils the command-safety classifiers
+ * assume). Throws a clear, actionable error when none is found instead of
+ * silently building an argv that will ENOENT.
  */
 export function shellArgv(command: string): string[] {
+  if (process.platform === "win32") {
+    const bash = findWindowsBash();
+    if (!bash) {
+      throw new Error(
+        "No POSIX shell found. ReAgent's bash tool requires Git for Windows " +
+          "(ships bash.exe): install it from https://git-scm.com/download/win, " +
+          "make sure it's on PATH, then restart reagent.",
+      );
+    }
+    return [bash, "-lc", command];
+  }
   if (fs.existsSync("/bin/bash")) {
     return ["/bin/bash", "-lc", command];
   }

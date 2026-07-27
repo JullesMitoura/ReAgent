@@ -104,7 +104,7 @@ const GLOB_COLLECT_CAP = 5_000;
 
 /**
  * Tool glob: matches fnmatch against the relative path OR the basename,
- * returned most-recently-modified first (mirrors Claude Code's Glob, which is
+ * returned most-recently-modified first (mirrors typical Glob tools, which are
  * commonly used to find "what changed most recently").
  */
 export function globFiles(pattern: string): string {

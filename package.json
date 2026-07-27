@@ -1,8 +1,16 @@
 {
   "name": "reagent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ReAgent: terminal and web code agent. Private by design: the only network egress is your own LLM endpoint.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JullesMitoura/ReAgent.git"
+  },
+  "homepage": "https://github.com/JullesMitoura/ReAgent#readme",
+  "bugs": {
+    "url": "https://github.com/JullesMitoura/ReAgent/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -27,7 +35,7 @@
     "dev": "tsx src/cli/main.ts",
     "dev:server": "tsx src/cli/main.ts serve",
     "build": "tsc -p tsconfig.build.json",
-    "build:web": "npm run build --workspace ui && rm -rf static && cp -R ui/dist static",
+    "build:web": "npm run build --workspace ui && node scripts/build-web.mjs",
     "prepublishOnly": "npm run build:web && npm run build",
     "postinstall": "node scripts/postinstall.mjs",
     "typecheck": "tsc --noEmit",

@@ -1,5 +1,5 @@
 /**
- * Typed agent definitions (Claude Code AgentDefinition pattern).
+ * Typed agent definitions.
  */
 
 export interface AgentDefinition {

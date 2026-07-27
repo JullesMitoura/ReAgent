@@ -9,7 +9,7 @@
  * provenance header; lazy regeneration at the start of the next session.
  *
  * Lives in `.reagent/` (agent state): does not pollute the user's repository
- * nor overwrite a hand-written AGENTS.md/CLAUDE.md.
+ * nor overwrite a hand-written AGENTS.md.
  */
 
 import crypto from "node:crypto";
@@ -46,7 +46,7 @@ const TRACKED: readonly string[] = [
   "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "Gemfile", "composer.json",
   "tsconfig.json", "vite.config.ts", "vite.config.js", "next.config.js",
   "Makefile", "justfile", "Dockerfile", "docker-compose.yml",
-  "AGENTS.md", "CLAUDE.md",
+  "AGENTS.md",
 ];
 
 // Common entry point candidates: only the header is read to classify the project.
@@ -57,7 +57,7 @@ const ENTRY_CANDIDATES: readonly string[] = [
 ];
 
 const GEN_SYSTEM =
-  "You write a terse project brief for AI coding agents (like a CLAUDE.md / AGENTS.md). " +
+  "You write a terse project brief for AI coding agents (like an AGENTS.md). " +
   "Record only what an agent cannot cheaply infer from the code. Be dense and factual: " +
   "short bullet fragments, not prose. Do not invent facts; omit anything the material " +
   "does not support. Never exceed ~150 lines.";

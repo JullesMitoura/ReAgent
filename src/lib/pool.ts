@@ -1,6 +1,5 @@
 /**
- * Bounded-concurrency fan-out (Claude Code's `all(gens, cap)` / Codex's
- * max_concurrent_threads pattern).
+ * Bounded-concurrency fan-out (Codex-style max_concurrent_threads pattern).
  *
  * `Promise.all(items.map(fn))` starts EVERY task at once: 10 parallel workers means
  * 10 simultaneous LLM streams and shells. mapLimit keeps at most `limit` tasks in

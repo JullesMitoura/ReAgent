@@ -1,6 +1,6 @@
 /**
  * Session persistence as one JSONL file per session under .reagent/sessions/,
- * in the style of Codex and Claude Code (which store one append-style JSONL
+ * in the style of Codex (which stores one append-style JSONL
  * transcript per session). Chosen over SQLite so sessions are human-readable,
  * git-diffable, and free of any native or experimental dependency.
  *
@@ -352,7 +352,7 @@ export class Session {
   /**
    * Full-text search over titles and message content by scanning the session
    * files (no FTS index; the single-user volume makes a scan effectively free,
-   * the same approach Codex and Claude Code take). Case-insensitive substring.
+   * the same approach Codex takes). Case-insensitive substring.
    */
   static search(
     query: string,

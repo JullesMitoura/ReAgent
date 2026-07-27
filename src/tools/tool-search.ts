@@ -1,6 +1,6 @@
 /**
  * `tool_search` tool: discover and activate deferred tools for the current turn
- * (Claude Code ToolSearch pattern). When config.enableDeferredTools is on, niche
+ * When config.enableDeferredTools is on, niche
  * tools are hidden from the schema until unlocked here, keeping the default tool
  * surface small. Unlocking mutates the turn's `enabledDeferred` set; activeSchemas()
  * then offers the matching schema on the next round.
