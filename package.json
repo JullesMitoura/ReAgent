@@ -1,5 +1,5 @@
 {
-  "name": "reagent",
+  "name": "reagent-code",
   "version": "0.3.0",
   "description": "ReAgent: terminal and web code agent. Private by design: the only network egress is your own LLM endpoint.",
   "license": "MIT",

@@ -94,8 +94,10 @@ macOS they additionally run inside a Seatbelt sandbox. Other commands always ask
 `reagent` is published on the public npm registry, no authentication required:
 
 ```bash
-npm install -g reagent
+npm install -g reagent-code
 ```
+
+The package is `reagent-code`; it installs a `reagent` command.
 
 `node-pty` is an optional native dependency (used for persistent shell sessions); if a
 machine has no C++ build toolchain it can fail to compile, `npm install` still succeeds,
