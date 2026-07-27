@@ -1,4 +1,4 @@
-# ReAgent (TypeScript)
+# ReAgent Code (TypeScript)
 
 *The agent that reacts to your code.*
 
